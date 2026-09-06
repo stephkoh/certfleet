@@ -47,10 +47,12 @@ router.use((req, res, next) => {
 });
 
 // ── Catalogue des types de cible + schéma de paramètres (sert l'UI de settings) ──
-// mode : 'agent' (via agent ADM Linux/Windows) | 'api' (connecteur push) | 'k8s' (monitoring)
+// mode : 'agent' (l'agent installé sur la cible pose le certificat)
+//      | 'api'   (le hub appelle directement l'API de l'appliance)
+//      | 'k8s'   (surveillance seule : cert-manager reste maître)
 export const TARGET_TYPES = [
   { type: "k8s_secret",   label: "Kubernetes (Secret TLS)", mode: "k8s",   icon: "☸️",
-    note: "Monitoring seul au lot 1 (cert-manager reste maître). Rollout restart ciblé plus tard.",
+    note: "Surveillance seule : cert-manager reste maître de l'émission. certfleet vérifie ce qui est réellement servi.",
     fields: [ { key: "cluster", label: "Cluster", type: "text", required: true },
               { key: "namespace", label: "Namespace", type: "text", required: true },
               { key: "secret", label: "Nom du Secret", type: "text", required: true } ] },
@@ -73,7 +75,7 @@ export const TARGET_TYPES = [
               { key: "pem_path", label: "Chemin PEM combiné", type: "text", required: true, placeholder: "/etc/haproxy/certs/site.pem" },
               { key: "reload_cmd", label: "Commande reload", type: "text", default: "systemctl reload haproxy" } ] },
   { type: "aloha",        label: "HAProxy ALOHA (appliance virtuelle)", mode: "api", icon: "🔀",
-    note: "Appliance HAProxy ALOHA — push via la Data Plane API (port 5555, /v3). certfleet REMPLACE le PEM (fullchain+clé) d'un certificat DÉJÀ présent dans le storage (bouton « Lister » pour le nom exact) et demande un reload immédiat (force_reload). La création d'un nouveau certificat (POST multipart) n'est pas implémentée. Un appareil = une cible : pour une paire HA, créer deux cibles. ✅ Connecteur opérationnel.",
+    note: "Seul connecteur API implémenté à ce jour, et éprouvé en production. Mise à jour à chaud, sans redémarrage de l'appliance.",
     fields: [ { key: "base_url", label: "URL Data Plane API", type: "text", required: true, placeholder: "http://lb-01.example.com:5555" },
               { key: "cert_name", label: "Nom du fichier certificat (storage ALOHA)", type: "text", required: true, placeholder: "exampleservicescom.pem" },
               { key: "username", label: "Utilisateur API (Basic Auth)", type: "text", required: true, placeholder: "admin" },
@@ -128,7 +130,7 @@ export const TARGET_TYPES = [
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "keystore_path", label: "Chemin keystore", type: "text", required: true },
               { key: "alias", label: "Alias", type: "text", required: true },
-              { key: "storepass_ref", label: "Réf. mot de passe (secret)", type: "text" },
+              { key: "storepass", label: "Mot de passe du keystore", type: "password", required: true },
               { key: "restart_cmd", label: "Commande restart appli", type: "text" } ] },
   { type: "uag",          label: "VMware Horizon / UAG", mode: "api", icon: "🖥️",
     note: "Unified Access Gateway (VDI) — connecteur API REST à cadrer.",
@@ -150,10 +152,10 @@ export const TARGET_TYPES = [
 
 // ── Guides détaillés par type (niveau débutant) — affichés à la sélection du type ──
 const AGENT_PREP = [
-  "Sur le serveur CIBLE, installer l'agent certfleet NATIF : ouvre IT › ADM, copie la commande d'enrôlement (curl …/api/adm/install.sh | sudo … bash) et exécute-la EN ROOT sur le serveur. Elle installe l'agent + le helper de certificat + la règle sudoers AUTOMATIQUEMENT (tu n'as pas à poser le helper à la main).",
-  "Attends ~1 min puis vérifie que le serveur apparaît dans IT › ADM (dernier contact récent). Il apparaîtra alors dans la liste déroulante « Agent » ci-dessus (par hostname).",
-  "IMPORTANT : le helper cert est TOUJOURS en NOPASSWD, même si l'agent a été installé en mode sécurisé (SUDO_SECURE=1). Le déploiement/renouvellement de certificat est donc 100 % non-interactif — jamais de mot de passe. Le mot de passe sudo (mode sécurisé) ne concerne QUE les mises à jour CVE (dnf), pas les certs.",
-  "Dépannage seulement (si l'agent est là mais le helper manque) : helper root /usr/local/bin/certfleet-cert-install + sudoers NOPASSWD. Commandes manuelles dans l'onglet « Types de cible » → encadré « Prérequis cible agent ». Sans le helper : l'agent écrit le cert mais NE recharge PAS le service.",
+  "Sur le serveur CIBLE, installez l'agent : ouvrez l'onglet Agents, copiez la commande d'installation et exécutez-la en root. Elle pose l'agent, le helper de certificat, la règle sudoers et la minuterie d'un seul coup — rien à installer à la main.",
+  "Attendez une minute, puis vérifiez que le serveur apparaît dans l'onglet Agents avec un contact récent. Il sera alors proposé dans la liste déroulante « Agent » ci-dessus, sous son nom d'hôte.",
+  "Le déploiement est entièrement non interactif : le helper s'exécute en NOPASSWD et aucun mot de passe n'est jamais demandé, y compris lors d'un renouvellement nocturne. C'est le helper qui recharge le service, en root, sur une liste blanche interne de commandes.",
+  "Dépannage seulement, si l'agent est en place mais que le helper manque : les commandes manuelles sont dans l'onglet « Types de cible », encadré « Prérequis d'une cible agent ». Sans le helper, l'agent écrit bien le certificat mais ne recharge pas le service — et il le dit dans son compte rendu.",
 ];
 const TARGET_GUIDES = {
   nginx: { what: "Dépose le certificat (fullchain) + la clé privée sur un serveur nginx, puis recharge nginx (sans coupure).",
@@ -233,7 +235,7 @@ const TARGET_GUIDES = {
     verify: "openssl s_client -connect serveur:443 (ou le port Serv-U).",
     gotcha: "Serv-U relit souvent le cert au redémarrage du service ou via son admin ; le bind 443 peut mettre ~30s à reprendre. Vérifie dans la console Serv-U que le nouveau cert est pris." },
   iis: { what: "Importe le certificat (PFX) dans le magasin Windows et le lie (binding) au site IIS. Agent Windows requis.",
-    prepare: ["Installe l'agent certfleet WINDOWS sur le serveur (IT › ADM, section agent Windows).", "L'agent Windows construit le PFX localement à partir du cert+clé (la clé privée ne transite jamais en PFX).", "Compte de service avec droits d'import cert + gestion IIS."],
+    prepare: ["Installez l'agent Windows sur le serveur : onglet Agents, bascule Windows. Il exige PowerShell 7.", "L'agent Windows construit le PFX localement à partir du cert+clé (la clé privée ne transite jamais en PFX).", "Compte de service avec droits d'import cert + gestion IIS."],
     fields: { agent_id: "Le serveur Windows/IIS.",
       site: "Nom du site IIS. Ex : Default Web Site",
       binding: "Binding HTTPS à mettre à jour. Ex : https :443:",
@@ -249,7 +251,7 @@ const TARGET_GUIDES = {
     verify: "Get-ExchangeCertificate | fl Thumbprint,Services,NotAfter ; test SMTP TLS (openssl s_client -starttls smtp -connect serveur:25).",
     gotcha: "PIÈGE MAJEUR : les Receive Connectors référencent le cert par TlsCertificateName au format <I>issuer<S>subject, JAMAIS par thumbprint. À 47 j le thumbprint change 8×/an → si tu câbles le thumbprint tu casses le SMTP à chaque renouvellement. Enable-ExchangeCertificate -Services … -Force (sinon prompt bloquant)." },
   rds_gateway: { what: "Importe le certificat (au format PFX) dans le magasin Windows LocalMachine\\My puis le lie au rôle Passerelle Bureau à distance (RD Gateway). Agent Windows requis.",
-    prepare: ["Installer l'agent certfleet WINDOWS sur le serveur RD Gateway (IT › ADM, section agent Windows).",
+    prepare: ["Installez l'agent Windows sur le serveur RD Gateway : onglet Agents, bascule Windows.",
       "L'agent Windows fabrique le PFX LOCALEMENT (cert + chaîne + clé) — la clé privée ne transite jamais en clair.",
       "Le compte de service de l'agent doit pouvoir importer un cert (LocalMachine\\My) et exécuter Set-RDCertificate (ou écrire la conf RD Gateway)."],
     fields: { agent_id: "Le serveur Windows RD Gateway (par hostname).",
@@ -267,28 +269,28 @@ const TARGET_GUIDES = {
       restart_cmd: "Commande pour redémarrer l'appli (ex : systemctl restart montomcat)" },
     verify: "keytool -list -keystore keystore.p12 -alias monsite ; puis test TLS sur le port de l'appli.",
     gotcha: "La cible la plus douloureuse : format PKCS12, l'appli doit être redémarrée pour relire le keystore. Attention au mot de passe du keystore (storepass)." },
-  uag: { what: "Pousse le certificat via l'API d'admin de VMware Horizon / UAG (Unified Access Gateway). PAS d'agent — connecteur API (lot suivant).",
+  uag: { what: "Pousserait le certificat via l'API d'administration de VMware Horizon UAG. Aucun agent à installer. ⚠️ CONNECTEUR NON IMPLÉMENTÉ : le déploiement échouera.",
     prepare: ["Aucun agent à installer (appliance durcie).", "Créer un accès API admin sur l'UAG (port 9443) + stocker les identifiants comme secret dans certfleet."],
     fields: { base_url: "URL admin de l'UAG. Ex : https://uag.exemple:9443", cred_ref: "Référence du secret (login/mdp API admin UAG)." },
     verify: "Ouvre l'URL de l'UAG dans un navigateur → cadenas → nouveau cert.",
-    gotcha: "Connecteur API pas encore construit (lot suivant). L'UAG attend un cert+clé au format PEM via son API REST." },
-  f5: { what: "Pousse le cert via l'API iControl REST du F5 BIG-IP et l'associe au Client SSL profile. Connecteur API (lot suivant).",
+    gotcha: "Connecteur non implémenté. L'UAG attend un certificat et sa clé au format PEM via son API REST — contribution bienvenue." },
+  f5: { what: "Pousserait le certificat via l'API iControl REST du F5 BIG-IP, pour l'associer au profil Client SSL. ⚠️ CONNECTEUR NON IMPLÉMENTÉ : le déploiement échouera.",
     prepare: ["Compte API sur le F5 (iControl REST) + secret dans certfleet."],
     fields: { base_url: "URL iControl REST. Ex : https://f5-mgmt", profile: "Nom du Client SSL profile à mettre à jour.", cred_ref: "Secret (identifiants API F5)." },
-    verify: "openssl s_client -connect vip:443", gotcha: "Connecteur API à construire (lot suivant)." },
-  checkpoint: { what: "Pousse le cert via l'API Check Point. Connecteur API (lot suivant).",
+    verify: "openssl s_client -connect vip:443", gotcha: "Connecteur non implémenté — contribution bienvenue." },
+  checkpoint: { what: "Pousserait le certificat via l'API de management Check Point. ⚠️ CONNECTEUR NON IMPLÉMENTÉ : le déploiement échouera.",
     prepare: ["Accès API Management Check Point + secret."],
     fields: { base_url: "URL API.", cred_ref: "Secret (identifiants API)." },
-    verify: "—", gotcha: "Connecteur API à construire (lot suivant)." },
-  api_generic: { what: "Pousse le cert via l'API HTTP d'une appliance FERMÉE, sur laquelle on ne peut PAS installer l'agent certfleet (ex. ECS Dell, Harbor). Connecteur API (lot suivant). ⚠️ Zabbix, Graylog, NetBox tournent sur Linux avec agent → NE PAS utiliser ce type : passe par une cible Apache/nginx (agent), comme GLPI.",
+    verify: "—", gotcha: "Connecteur non implémenté — contribution bienvenue." },
+  api_generic: { what: "Pousse le cert via l'API HTTP d'une appliance FERMÉE, sur laquelle on ne peut PAS installer l'agent certfleet (ex. ECS Dell, Harbor). ⚠️ CONNECTEUR NON IMPLÉMENTÉ : chaque appliance a son API propre, un connecteur dédié reste à écrire. Zabbix, Graylog et NetBox tournent sur Linux avec agent → NE PAS utiliser ce type : passe par une cible Apache/nginx (agent), comme GLPI.",
     prepare: ["Créer un token/compte API sur l'appliance + le stocker comme secret."],
     fields: { base_url: "URL de l'API d'upload du cert.", method: "Méthode HTTP (PUT/POST).", cred_ref: "Secret (token/identifiants)." },
-    verify: "Vérifie dans l'admin de l'appliance.", gotcha: "Chaque appliance a son API propre — connecteur dédié à construire (lot suivant)." },
+    verify: "Vérifie dans l'admin de l'appliance.", gotcha: "Chaque appliance a son API propre : un connecteur dédié reste à écrire pour chacune. Seul ALOHA est implémenté à ce jour." },
   k8s_secret: { what: "MONITORING seul dans ce lot : cert-manager reste maître de l'émission sur K8s. certfleet surveille l'expiration (via un endpoint monitoré) et pourra faire un rollout ciblé plus tard.",
     prepare: ["Rien à installer côté certfleet pour la surveillance.", "Pour surveiller le cert servi : ajoute l'URL du service dans l'onglet Monitoring."],
     fields: { cluster: "Nom du cluster (libellé).", namespace: "Namespace du Secret TLS.", secret: "Nom du Secret TLS (type kubernetes.io/tls)." },
     verify: "kubectl -n <ns> get secret <secret> -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -enddate",
-    gotcha: "Ne remplace pas cert-manager. Mettre à jour le Secret ne suffit pas : les pods qui montent le cert en volume gardent l'ancien → rollout restart nécessaire (lot suivant)." },
+    gotcha: "Ne remplace pas cert-manager. Mettre à jour le Secret ne suffit d'ailleurs pas : les pods qui montent le certificat en volume gardent l'ancien tant qu'ils n'ont pas redémarré." },
 };
 
 // ── Schéma (idempotent, additif — schéma public infra-global) ──
@@ -911,14 +913,29 @@ async function _deployToTarget(cert, t, actor) {
   if (!cert.leaf_pem || !cert.private_key_enc) throw new Error("Certificat non émis — émets-le d'abord");
   const typeDef = TARGET_TYPES.find(x => x.type === t.type);
   if (typeDef && typeDef.mode === "api" && t.type === "aloha") return _deployAloha(cert, t, actor);
-  if (!typeDef || typeDef.mode !== "agent") throw new Error(`Déploiement « ${typeDef?.mode || t.type} » pas encore supporté (lot suivant)`);
+  if (!typeDef || typeDef.mode !== "agent") {
+    throw new Error(typeDef?.mode === "api"
+      ? `Le connecteur API « ${t.type} » n'est pas implémenté. Seul ALOHA l'est à ce jour.`
+      : `Le type « ${t.type} » est en surveillance seule : rien n'est déployé depuis certfleet.`);
+  }
   if (!t.agent_id) throw new Error("Cible sans agent (choisis un agent enrôlé)");
   const ag = (await query("SELECT pubkey FROM agents WHERE agent_id=$1", [t.agent_id])).rows[0];
   if (!ag?.pubkey) throw new Error("Agent sans clé publique (réenrôle l'agent)");
   const params = t.params || {};
-  const cert_path = params.cert_path || params.pem_path;
-  const key_path = params.key_path || params.pem_path;
-  if (!cert_path || !key_path) throw new Error("Paramètres cert_path/key_path manquants sur la cible");
+  const cert_path = params.cert_path || params.pem_path || "";
+  const key_path = params.key_path || params.pem_path || "";
+
+  // Deux familles de cibles, qui n'attendent pas la même chose :
+  //   — « fichier » : le certificat est écrit sur le disque, aux chemins donnés ;
+  //   — « magasin » : Windows et Java le rangent dans un magasin, un chemin
+  //     n'aurait alors aucun sens.
+  // Exiger cert_path pour toutes rendait IIS, Exchange, la passerelle RDS et
+  // les keystores Java inutilisables : ils échouaient avant même de partir.
+  const STORE_TYPES = new Set(["iis", "exchange", "rds_gateway", "java_keystore"]);
+  const storeMode = STORE_TYPES.has(t.type);
+  if (!storeMode && (!cert_path || !key_path)) {
+    throw new Error("Paramètres cert_path/key_path manquants sur la cible");
+  }
 
   const fullchain = [cert.leaf_pem, cert.chain_pem].filter(Boolean).join("\n") + "\n";
   const keyPem = await vaultDecrypt(cert.private_key_enc);
@@ -931,13 +948,25 @@ async function _deployToTarget(cert, t, actor) {
   // PREMIER certificat du fichier .crt et attendent la CA dans un reglage a part
   // (Serv-U notamment). On ecrit alors chain_pem dans chain_path.
   const chain_path = params.chain_path || "";
+  // Les paramètres propres au type (site IIS, alias du keystore, services
+  // Exchange…) sont transmis tels quels : c'est l'agent qui sait quoi en faire.
+  // On retire ceux déjà portés explicitement, pour ne pas les envoyer en double.
+  const extra = { ...params };
+  for (const k of ["cert_path", "key_path", "pem_path", "chain_path", "reload_cmd", "agent_id"]) {
+    delete extra[k];
+  }
+
   const payload = {
+    target_type: t.type,
+    mode: storeMode ? "store" : "file",
     cert_pem: fullchain, cert_path, key_path,
     ...(chain_path ? { chain_path, chain_pem: (cert.chain_pem || "").trim() + "\n" } : {}),
     key_iv: iv.toString("hex"),
     aeskey_enc: aesKeyEnc.toString("base64"),
     key_cipher: keyCipher.toString("base64"),
     reload_cmd: params.reload_cmd || "",
+    common_name: cert.common_name || "",
+    params: extra,
   };
   const cmd = (await query(
     "INSERT INTO commands (agent_id, action, kind, payload, status, proposed_by, approved_by) VALUES ($1,'deploy','cert',$2,'approved',$3,$3) RETURNING id",
@@ -945,9 +974,10 @@ async function _deployToTarget(cert, t, actor) {
   )).rows[0];
   const dep = (await query(
     "INSERT INTO cert_deployments (certificate_id, target_id, status, adm_command_id, log) VALUES ($1,$2,'pending',$3,$4) RETURNING id",
-    [cert.id, t.id, cmd.id, `Commande cert-deploy → ${t.agent_id} : ${cert_path}`]
+    [cert.id, t.id, cmd.id, `Commande ${t.type} → ${t.agent_id} : ${storeMode ? "magasin de certificats" : cert_path}`]
   )).rows[0];
-  return { command_id: cmd.id, deployment_id: dep.id, agent_id: t.agent_id, cert_path };
+  return { command_id: cmd.id, deployment_id: dep.id, agent_id: t.agent_id,
+           cert_path: storeMode ? null : cert_path, mode: storeMode ? "store" : "file" };
 }
 
 router.post("/targets/:tid/deploy", async (req, res) => {

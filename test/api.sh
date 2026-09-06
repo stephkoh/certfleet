@@ -142,6 +142,41 @@ AT2=$(curl -s -X POST -H 'Content-Type: application/json' \
 curl -s -H "$A" "$B/api/agents/" | grep -q 'lb-01' && ok "agent visible côté hub" || ko "inventaire agents" "absent"
 [ "$(code "$B/api/agents/")" = 401 ] && ok "inventaire des agents authentifié" || ko "inventaire ouvert" "accessible"
 
+echo "── agents : enrolement complet ──"
+# L'installateur porte le jeton d'enrolement : il ne doit jamais etre servi
+# sans que l'appelant l'ait deja presente.
+c=$(code "$B/api/agents/install.sh")
+[ "$c" = 403 ] || [ "$c" = 503 ] && ok "installateur jamais servi sans jeton ($c)" || ko "installateur" "$c"
+TOKR=$(curl -s -H "$A" -X POST "$B/api/agents/enroll-token/rotate" | jget token)
+[ -n "$TOKR" ] && ok "jeton d'enrolement genere depuis l'API" || ko "generation du jeton" "vide"
+[ "$(code -H "Authorization: Bearer mauvais" "$B/api/agents/install.sh")" = 403 ] && ok "installateur refuse un mauvais jeton" || ko "mauvais jeton" "accepte"
+
+INST=$(curl -s -H "Authorization: Bearer $TOKR" "$B/api/agents/install.sh")
+printf '%s' "$INST" | bash -n - 2>/dev/null && ok "installateur Linux syntaxiquement valide" || ko "syntaxe installateur" "erreur"
+printf '%s' "$INST" | grep -q "$TOKR" && ok "jeton insere dans l'installateur" || ko "jeton absent" "non insere"
+printf '%s' "$INST" | grep -q 'certfleet-agent enroll' && ok "installateur enrole la machine" || ko "enrolement absent" "manquant"
+printf '%s' "$INST" | grep -q 'sudoers.d/certfleet-agent' && ok "installateur pose la regle sudoers" || ko "sudoers absent" "manquant"
+
+INSTW=$(curl -s -H "Authorization: Bearer $TOKR" "$B/api/agents/install.ps1")
+printf '%s' "$INSTW" | grep -q 'PSVersion.Major -lt 7' && ok "installateur Windows verifie PowerShell 7" || ko "controle PowerShell" "absent"
+[ "$(code "$B/api/agents/agent.ps1")" = 200 ] && ok "agent Windows telechargeable" || ko "agent.ps1" "absent"
+
+# Enrolement reel avec une vraie cle RSA, puis signal de vie.
+PUBP=$(mktemp); PRIVP=$(mktemp)
+openssl genrsa -out "$PRIVP" 2048 2>/dev/null; openssl rsa -in "$PRIVP" -pubout -out "$PUBP" 2>/dev/null
+BODY=$(node -e 'const fs=require("fs");console.log(JSON.stringify({agent_id:"win1",enroll_token:process.argv[1],hostname:"srv-iis",platform:"windows",os:"Windows Server",agent_version:"2.0.0",pubkey:fs.readFileSync(process.argv[2],"utf8")}))' "$TOKR" "$PUBP")
+AT2=$(curl -s -X POST -H 'Content-Type: application/json' -d "$BODY" "$B/api/agents/enroll" | jget token)
+[ -n "$AT2" ] && ok "agent Windows enrole avec sa cle publique" || ko "enrolement Windows" "refuse"
+
+HB=$(code -X POST -H 'Content-Type: application/json' -H "X-Agent-Token: $AT2" -d '{"agent_id":"win1","platform":"windows","os":"Windows Server 2022","ip":"192.0.2.10"}' "$B/api/agents/heartbeat")
+[ "$HB" = 200 ] && ok "signal de vie accepte" || ko "signal de vie" "$HB"
+HB=$(code -X POST -H 'Content-Type: application/json' -H 'X-Agent-Token: faux' -d '{"agent_id":"win1"}' "$B/api/agents/heartbeat")
+[ "$HB" = 403 ] && ok "signal de vie refuse avec un mauvais jeton" || ko "signal de vie non protege" "$HB"
+curl -s -H "$A" "$B/api/agents/" | grep -q '"platform":"windows"' && ok "plateforme remontee dans l'inventaire" || ko "plateforme" "absente"
+
+[ "$(code -H "$V" -X POST "$B/api/agents/enroll-token/rotate")" = 403 ] && ok "viewer ne peut pas generer de jeton" || ko "cloisonnement du jeton" "autorise"
+[ "$(code -H "$A" -X DELETE "$B/api/agents/enroll-token")" = 200 ] && ok "enrolement desactivable" || ko "desactivation" "echec"
+
 echo "── audit ──"
 r=$(curl -s -H "$A" "$B/api/users/audit?limit=100")
 echo "$r" | grep -q '"action":"login"' && ok "connexions journalisées" || ko "journal connexions" "absent"

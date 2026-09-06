@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS agents (
   agent_version TEXT,
   pubkey        TEXT,               -- clé publique RSA, sert à chiffrer la clé privée du certificat
   sudo_mode     TEXT,
+  platform      TEXT,               -- linux | windows : détermine l'agent à installer
   last_seen     TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -110,3 +111,13 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS audit_ts_idx     ON audit_log (ts DESC);
 CREATE INDEX IF NOT EXISTS audit_action_idx ON audit_log (action, ts DESC);
+
+-- ════════════════════════════════════════════════════════════════════
+-- Évolutions de schéma
+--
+-- CREATE TABLE IF NOT EXISTS ne touche pas une table déjà présente : les
+-- colonnes ajoutées après coup doivent l'être explicitement, sans quoi une
+-- installation existante resterait sur l'ancien schéma après mise à jour.
+-- ADD COLUMN IF NOT EXISTS rend l'opération rejouable.
+-- ════════════════════════════════════════════════════════════════════
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS platform TEXT;
