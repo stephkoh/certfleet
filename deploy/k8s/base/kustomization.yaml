@@ -1,0 +1,31 @@
+# ═══════════════════════════════════════════════════════════════════
+#   kubectl apply -k deploy/k8s/base
+#
+# Le Secret n'est PAS listé ici : créez-le en ligne de commande pour que vos
+# secrets ne passent jamais par un fichier versionné (cf. 01-secret.example.yaml).
+# ═══════════════════════════════════════════════════════════════════
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: certfleet
+
+resources:
+  - 00-namespace.yaml
+  - 02-configmap.yaml
+  - 03-postgres.yaml      # retirez cette ligne si vous avez déjà une base
+  - 04-deployment.yaml
+  - 05-service.yaml
+  - 06-ingress.yaml
+
+# includeSelectors: false est délibéré. Les sélecteurs d'un Deployment sont
+# immuables après création : y injecter un label rendrait toute évolution
+# ultérieure de ce label impossible sans supprimer l'objet.
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: certfleet
+      app.kubernetes.io/managed-by: kustomize
+
+images:
+  - name: ghcr.io/stephkoh/certfleet
+    newTag: 0.1.0

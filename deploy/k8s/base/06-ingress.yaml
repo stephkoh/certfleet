@@ -1,0 +1,38 @@
+# ═══════════════════════════════════════════════════════════════════
+# Exposition HTTP.
+#
+# Deux publics passent par cette URL :
+#   — les administrateurs, via le navigateur ;
+#   — les agents installés sur vos serveurs, qui interrogent le hub.
+# Les agents doivent donc pouvoir joindre ce nom depuis vos réseaux.
+#
+# Adaptez le nom d'hôte, la classe d'Ingress et l'émetteur TLS à votre cluster.
+# Ici cert-manager s'occupe du certificat du hub lui-même : c'est bien le rôle
+# de cert-manager dans Kubernetes, et certfleet ne cherche pas à le remplacer.
+# ═══════════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: certfleet
+  namespace: certfleet
+  labels:
+    app.kubernetes.io/name: certfleet
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - certfleet.exemple.fr
+      secretName: certfleet-tls
+  rules:
+    - host: certfleet.exemple.fr
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: certfleet
+                port:
+                  name: http
