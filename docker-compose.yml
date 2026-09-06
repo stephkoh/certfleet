@@ -1,0 +1,35 @@
+# Démarrage complet : docker compose up -d
+# Puis ouvrir http://localhost:8080 et se connecter avec ADMIN_TOKEN.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: certfleet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: certfleet
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U certfleet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://certfleet:${POSTGRES_PASSWORD:-changeme}@db:5432/certfleet
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?definir ADMIN_TOKEN dans .env}
+      CERT_VAULT_KEY: ${CERT_VAULT_KEY:?definir CERT_VAULT_KEY dans .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      PORT: 8080
+    ports:
+      - "${PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db:

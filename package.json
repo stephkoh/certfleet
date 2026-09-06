@@ -1,0 +1,42 @@
+{
+  "name": "certfleet",
+  "version": "0.1.0",
+  "description": "Déploie vos certificats ACME là où cert-manager ne va pas : Serv-U, HAProxy ALOHA, IIS, Exchange, F5, vsftpd, keystores Java.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/db.js && node --check src/auth.js && node --check src/routes/certificates.js && node --check src/routes/agents.js && node --check src/routes/users.js && node --check src/lib/acme.js && node --check src/lib/certprobe.js && node --check src/lib/vault.js && node --check src/lib/ldap.js && node --check src/lib/dns/gandi.js",
+    "avatar": "node assets/make-avatar.mjs",
+    "test:smoke": "node test/smoke.mjs",
+    "test:api": "bash test/api.sh",
+    "test": "npm run check && npm run test:smoke"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ldapts": "^7.4.0",
+    "pg": "^8.11.5"
+  },
+  "keywords": [
+    "acme",
+    "lets-encrypt",
+    "tls",
+    "certificate",
+    "dns-01",
+    "haproxy",
+    "serv-u",
+    "iis",
+    "exchange",
+    "f5",
+    "vsftpd",
+    "keystore",
+    "certificate-management",
+    "certificate-deployment",
+    "active-directory",
+    "ldap",
+    "rbac"
+  ]
+}

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>certfleet — Connexion</title>
+<script src="auth.js"></script>
+<style>
+:root{--blue:#0b3d91;--blue2:#1256c4;--bg:#f4f5f7;--card:#fff;--border:#e6e8eb;--text:#1d3557;--mute:#8892a3;--red:#dc2626}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;background:var(--bg);
+     color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:34px;width:min(430px,100%);
+     box-shadow:0 10px 40px rgba(0,0,0,.06)}
+h1{font-size:21px;font-weight:700;display:flex;align-items:center;gap:9px;margin-bottom:6px}
+p.sub{font-size:12.5px;color:var(--mute);margin-bottom:24px;line-height:1.55}
+label{display:block;font-size:12px;font-weight:600;margin-bottom:6px;margin-top:14px}
+label:first-of-type{margin-top:0}
+input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
+input:focus{outline:2px solid var(--blue2);outline-offset:-1px}
+button{width:100%;margin-top:20px;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:8px;
+       font-size:14px;font-weight:600;cursor:pointer}
+button:hover{background:var(--blue2)}
+button:disabled{opacity:.6;cursor:default}
+.err{color:var(--red);font-size:12.5px;margin-top:12px;min-height:18px;line-height:1.45}
+.hint{font-size:11.5px;color:var(--mute);margin-top:20px;padding-top:16px;border-top:1px solid var(--border);line-height:1.65}
+.hint a{color:var(--blue);cursor:pointer;text-decoration:none}
+.hint a:hover{text-decoration:underline}
+code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>🔐 certfleet</h1>
+  <p class="sub">Déploie vos certificats ACME là où cert-manager ne va pas.</p>
+
+  <!-- Connexion normale : compte local ou compte d'annuaire, le serveur tranche. -->
+  <form id="fCreds" onsubmit="doLogin(event)">
+    <label for="u">Identifiant</label>
+    <input id="u" autocomplete="username" autofocus placeholder="prenom.nom">
+    <label for="p">Mot de passe</label>
+    <input id="p" type="password" autocomplete="current-password" placeholder="••••••••••••">
+    <button type="submit" id="btn">Se connecter</button>
+  </form>
+
+  <!-- Repli : jeton de secours du serveur, quand l'annuaire ou la base est HS. -->
+  <form id="fToken" onsubmit="doTokenLogin(event)" hidden>
+    <label for="tok">Jeton de secours (ADMIN_TOKEN)</label>
+    <input id="tok" type="password" autocomplete="off" placeholder="••••••••••••••••">
+    <button type="submit" id="btnTok">Se connecter</button>
+  </form>
+
+  <div class="err" id="err"></div>
+
+  <div class="hint" id="hintCreds">
+    Les comptes d'annuaire (Active Directory) se connectent avec leurs identifiants
+    habituels — aucun mot de passe n'est stocké ici.
+    <br><a onclick="showToken(true)">Utiliser le jeton de secours</a>
+  </div>
+  <div class="hint" id="hintToken" hidden>
+    Le jeton est la variable <code>ADMIN_TOKEN</code> du serveur. Il donne un accès
+    administrateur sans passer par la base : à réserver au dépannage.
+    <br><a onclick="showToken(false)">← Revenir à la connexion normale</a>
+  </div>
+</div>
+
+<script>
+const err = document.getElementById('err');
+
+function showToken(on){
+  document.getElementById('fCreds').hidden = on;
+  document.getElementById('fToken').hidden = !on;
+  document.getElementById('hintCreds').hidden = on;
+  document.getElementById('hintToken').hidden = !on;
+  err.textContent = '';
+  (on ? document.getElementById('tok') : document.getElementById('u')).focus();
+}
+
+async function post(body, btn, label){
+  err.textContent = '';
+  btn.disabled = true; btn.textContent = 'Vérification…';
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    return d;
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+}
+
+async function doLogin(ev){
+  ev.preventDefault();
+  const username = document.getElementById('u').value.trim();
+  const password = document.getElementById('p').value;
+  const btn = document.getElementById('btn');
+  if (!username || !password) { err.textContent = 'Identifiant et mot de passe requis.'; return; }
+  try {
+    const d = await post({ username, password }, btn, 'Se connecter');
+    // Le cookie suffit ; on garde le jeton pour l'en-tête Authorization.
+    if (d.token) CERTFLEET_AUTH.setToken(d.token);
+    location.href = (d.user && d.user.must_change_password) ? 'change-password.html' : 'index.html';
+  } catch (e) { err.textContent = e.message; }
+}
+
+async function doTokenLogin(ev){
+  ev.preventDefault();
+  const token = document.getElementById('tok').value.trim();
+  const btn = document.getElementById('btnTok');
+  if (!token) { err.textContent = 'Saisissez le jeton.'; return; }
+  try {
+    await post({ token }, btn, 'Se connecter');
+    CERTFLEET_AUTH.setToken(token);
+    location.href = 'index.html';
+  } catch (e) { err.textContent = e.message; }
+}
+</script>
+</body>
+</html>

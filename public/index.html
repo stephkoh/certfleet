@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>certfleet — Certificats</title>
+<script src="auth.js"></script>
+
+<style>
+:root{--cm-blue:#0b3d91;--cm-blue2:#1256c4;--cm-bg:#f4f5f7;--cm-card:#fff;--cm-border:#e6e8eb;--cm-text:#1d3557;--cm-mute:#8892a3;--cm-green:#16a34a;--cm-amber:#d97706;--cm-red:#dc2626;--cm-purple:#7c3aed;--r:8px}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{font-family:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;background:var(--cm-bg);color:var(--cm-text);min-height:100vh}
+.wrap{padding:22px 26px;max-width:1560px;margin:0 auto}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.h-title{font-size:22px;font-weight:700;display:flex;align-items:center;gap:9px}
+.h-sub{font-size:12.5px;color:var(--cm-mute);margin-top:3px;max-width:720px}
+.card{background:var(--cm-card);border:1px solid var(--cm-border);border-radius:var(--r);padding:18px 20px;margin-bottom:16px}
+.card h3{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;font-size:13px;font-weight:600;border:1px solid var(--cm-border);border-radius:var(--r);background:#fff;cursor:pointer;color:var(--cm-text);white-space:nowrap}
+.btn:hover{background:var(--cm-bg)}
+.btn-primary{background:var(--cm-blue);border-color:var(--cm-blue);color:#fff}
+.btn-primary:hover{background:var(--cm-blue2)}
+.btn-sm{padding:4px 9px;font-size:12px}
+body.readonly .actions .btn-primary,body.readonly .wr{display:none}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:600px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:#fff;border:1px solid var(--cm-border);border-left-width:4px;border-radius:var(--r);padding:12px 14px}
+.kpi-val{font-size:24px;font-weight:800;line-height:1}
+.kpi-lbl{font-size:10.5px;color:var(--cm-mute);text-transform:uppercase;letter-spacing:.05em;margin-top:6px;font-weight:600}
+.tabs{display:flex;gap:4px;border-bottom:2px solid var(--cm-border);margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:9px 16px;font-size:13px;font-weight:600;color:var(--cm-mute);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px}
+.tab.active{color:var(--cm-blue);border-bottom-color:var(--cm-blue)}
+.pane{display:none}.pane.active{display:block}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--cm-border);vertical-align:middle}
+th{font-weight:600;color:var(--cm-mute);background:var(--cm-bg);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+tr:hover td{background:#fafbfc}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;font-size:11px;font-weight:700;border-radius:99px}
+.b-ok{background:#dcfce7;color:var(--cm-green)}
+.b-warn{background:#fef3c7;color:var(--cm-amber)}
+.b-crit{background:#ffedd5;color:#ea580c}
+.b-exp{background:#fee2e2;color:var(--cm-red)}
+.b-unk{background:#eef0f3;color:#64748b}
+.b-mism{background:#f3e8ff;color:var(--cm-purple)}
+.b-unreach{background:#e2e8f0;color:#475569}
+.b-blue{background:#e0edff;color:var(--cm-blue)}
+.muted{color:var(--cm-mute);font-size:12px}
+.hi{cursor:help;color:#2563eb;font-weight:700;font-size:11px;margin-left:5px;border:1px solid #bfdbfe;border-radius:50%;padding:0 4px;background:#eff6ff}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+.actions{display:flex;gap:5px;flex-wrap:wrap}
+.iconbtn{border:1px solid var(--cm-border);background:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px}
+.iconbtn:hover{background:var(--cm-bg)}
+label{display:block;font-size:12px;font-weight:600;color:var(--cm-mute);margin:8px 0 4px}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--cm-border);border-radius:var(--r);font-family:inherit;font-size:13px;background:#fff;color:var(--cm-text)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--cm-blue)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:700px){.row2,.row3{grid-template-columns:1fr}}
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:flex-start;justify-content:center;z-index:1000;padding:34px 14px;overflow:auto}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:12px;max-width:920px;width:100%;padding:0;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 22px;border-bottom:1px solid var(--cm-border)}
+.modal-head h3{font-size:16px;font-weight:700}
+.modal-body{padding:18px 22px;max-height:74vh;overflow:auto}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 22px;border-top:1px solid var(--cm-border)}
+.close-x{background:none;border:none;font-size:22px;cursor:pointer;color:var(--cm-mute)}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--cm-text);color:#fff;padding:11px 16px;border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.25);z-index:2000;font-size:13px;opacity:0;transform:translateY(8px);transition:.2s}
+.toast.show{opacity:1;transform:none}
+.toast.ok{background:var(--cm-green)}.toast.err{background:var(--cm-red)}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+/* Échéancier visuel */
+.tl-item{display:grid;grid-template-columns:230px 1fr 120px;gap:14px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--cm-border)}
+.tl-item:last-child{border-bottom:none}
+.tl-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-bar{position:relative;height:10px;border-radius:99px;background:#eef2f7;overflow:hidden}
+.tl-fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px}
+.tl-right{text-align:right;font-size:12px}
+.tl-days{font-weight:800;font-size:15px}
+.empty{text-align:center;color:var(--cm-mute);padding:26px 0;font-size:12.5px}
+/* Cartes types de cible */
+.tt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.tt-card{border:1px solid var(--cm-border);border-radius:var(--r);padding:14px;background:#fff}
+.tt-card h4{font-size:14px;display:flex;align-items:center;gap:7px;margin-bottom:4px}
+.tt-mode{font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;padding:1px 7px;border-radius:99px}
+.tt-field{font-size:11.5px;color:#475569;padding:2px 0;border-top:1px dashed #eef0f3}
+.tt-note{font-size:11.5px;color:var(--cm-amber);background:#fffbeb;border-radius:6px;padding:6px 8px;margin:8px 0}
+.filterbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.filterbar input,.filterbar select{width:auto;min-width:180px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div>
+      <div class="h-title">🔐 certfleet</div>
+      <div class="h-sub">Émission ACME, déploiement sur vos serveurs et vérification par sonde TLS réelle : inventaire, échéancier et supervision multi-cible au même endroit.</div>
+      <div id="userbar" style="margin-top:10px"></div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="openProbe()">🧪 Tester une cible</button>
+      <button class="btn" onclick="checkAll(this)">🔄 Sonder tout</button>
+      <button class="btn" onclick="openEpModal()">➕ Endpoint monitoré</button>
+      <button class="btn btn-primary" onclick="openCertModal()">➕ Certificat</button>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <h3>📅 Échéancier — prochaines expirations</h3>
+    <div id="timeline"><div class="empty">Chargement…</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-pane="inv" onclick="switchTab('inv')">📜 Inventaire</button>
+    <button class="tab" data-pane="mon" onclick="switchTab('mon')">📡 Monitoring</button>
+    <button class="tab" data-pane="deploy" onclick="switchTab('deploy')">🚀 Déploiements</button>
+    <button class="tab" data-pane="types" onclick="switchTab('types')">⚙️ Types de cible</button>
+    <button class="tab" data-pane="secu" onclick="switchTab('secu')">🔒 Sécurité</button>
+  </div>
+
+  <div class="pane active" id="pane-inv">
+    <div class="card">
+      <div class="filterbar">
+        <input id="invSearch" placeholder="🔎 Rechercher (CN, domaine, propriétaire…)" oninput="renderCerts()">
+        <select id="invStatus" onchange="renderCerts()">
+          <option value="">Tous les statuts</option>
+          <option value="expired">Expiré</option><option value="critical">Critique (≤7j)</option>
+          <option value="warning">Bientôt (≤21j)</option><option value="ok">OK</option>
+          <option value="unknown">Inconnu</option>
+        </select>
+        <span class="muted" id="invCount"></span>
+      </div>
+      <div style="overflow-x:auto"><table id="invTable"><thead><tr>
+        <th>Certificat</th><th>Domaines (SAN)</th><th>Émetteur</th><th>Expiration</th><th>Cibles</th><th>Renouv.</th><th></th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="pane" id="pane-mon">
+    <div class="card">
+      <div class="filterbar">
+        <input id="monSearch" placeholder="🔎 hôte, cluster, label…" oninput="renderEndpoints()">
+        <select id="monCluster" onchange="renderEndpoints()"><option value="">Tous les clusters</option></select>
+        <span class="muted">La sonde rouvre une vraie connexion TLS et lit le certificat servi (SHA-256 comparé à l'attendu).</span>
+      </div>
+      <div style="overflow-x:auto"><table id="monTable"><thead><tr>
+        <th>Endpoint</th><th>Cluster</th><th>Statut</th><th>Émetteur servi</th><th>Expiration</th><th>Vérifié</th><th></th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <div class="pane" id="pane-deploy">
+    <div class="card">
+      <div class="filterbar">
+        <input id="depSearch" placeholder="🔎 certificat, serveur, chemin…" oninput="renderDeployOverview()">
+        <button class="btn btn-sm" onclick="refreshDeployments(this)" title="Recharger les statuts de déploiement">↻ Actualiser</button>
+        <span class="muted">Serveurs qui hébergent chaque certificat, groupés par type de cible. 🚀 déploie · statut du dernier déploiement.</span>
+      </div>
+      <div id="depOverview"><div class="empty">Chargement…</div></div>
+    </div>
+  </div>
+
+  <div class="pane" id="pane-types">
+    <div class="card" style="border-left:4px solid var(--cm-blue)">
+      <h3>🔧 Prérequis « cible agent » — à faire UNE fois par serveur Linux</h3>
+      <div class="tt-note" style="background:#dcfce7;color:#166534;border:1px solid #86efac;margin-bottom:10px">✅ <b>En principe vous n'avez rien à faire ici.</b> Le script d'enrôlement de l'agent installe déjà le helper et sa règle <span class="mono">sudoers</span> — c'est la ligne <span class="mono">[install] helper certfleet installé</span> dans son journal. La procédure manuelle ci-dessous ne sert qu'au dépannage, si l'agent est en place mais que le helper manque.</div>
+      <div class="muted" style="margin-bottom:8px">Pour déployer réellement (écrire dans <span class="mono">/etc</span> + recharger le service), le serveur doit avoir : l'<b>agent certfleet natif</b> enrôlé (IT › ADM) + le <b>helper root</b> + la <b>règle sudoers</b>.</div>
+      <div class="tt-note" style="background:#fef9c3;color:#854d0e;border:1px solid #fde047;margin-bottom:10px">🔑 <b>Certificat ≠ mode sudo.</b> Le helper cert est <b>TOUJOURS en NOPASSWD</b>, même si l'agent a été installé en mode sécurisé (<span class="mono">SUDO_SECURE=1</span>). Donc le <b>déploiement / renouvellement de certificat est 100 % non-interactif</b> : jamais de mot de passe demandé. Le mot de passe sudo (mode sécurisé) ne concerne QUE les <b>mises à jour CVE</b> (dnf/systemctl), pas les certs. Le reload du service est fait <b>par le helper lui-même, en root</b> (whitelist interne).</div>
+      <div style="margin-bottom:6px"><b>Option A (normal — automatique)</b> — la commande d'enrôlement affichée dans <b>IT › ADM</b> : <span class="mono">…/api/adm/install.sh | sudo … bash</span> pose l'agent + le helper + le sudoers <b>d'un coup</b>. C'est tout.</div>
+      <div><b>Option B (dépannage manuel — SEULEMENT si le helper manque)</b>, en root sur le serveur — 3 étapes :</div>
+      <div style="margin:6px 0 2px"><b>1.</b> Installer le helper root :</div>
+      <pre style="background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;white-space:pre-wrap">curl -fsSL https://certfleet.example.com/api/adm/cert-install.sh -o /usr/local/bin/certfleet-cert-install
+chmod 0755 /usr/local/bin/certfleet-cert-install
+chown root:root /usr/local/bin/certfleet-cert-install</pre>
+      <div style="margin:8px 0 2px"><b>2.</b> Créer le fichier <span class="mono">/etc/sudoers.d/certfleet-cert-install</span> avec <b>EXACTEMENT cette ligne</b> (et rien d'autre) :</div>
+      <pre style="background:#0f172a;color:#4ade80;padding:10px;border-radius:6px;font-size:12px;overflow:auto;white-space:pre-wrap;border:1px solid #4ade80">srv_certfleet-agent ALL=(root) NOPASSWD: /usr/local/bin/certfleet-cert-install</pre>
+      <div class="muted" style="font-size:11px">↳ remplace <span class="mono">srv_certfleet-agent</span> par le compte de service de ton agent s'il est différent (par défaut c'est bien <span class="mono">srv_certfleet-agent</span>). Décomposé : <span class="mono">srv_certfleet-agent</span> = qui · <span class="mono">ALL=(root)</span> = peut lancer en tant que root · <span class="mono">NOPASSWD:</span> = sans mot de passe · <span class="mono">/usr/local/bin/certfleet-cert-install</span> = uniquement CE script.</div>
+      <div style="margin:8px 0 2px"><b>3.</b> Permissions + validation de la syntaxe (obligatoire, sinon sudo peut casser) :</div>
+      <pre style="background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;white-space:pre-wrap">chmod 0440 /etc/sudoers.d/certfleet-cert-install
+visudo -cf /etc/sudoers.d/certfleet-cert-install    # doit répondre: … parsed OK</pre>
+      <div class="muted" style="margin-top:8px"><b>Ce que le helper autorise à recharger</b> (whitelist interne, PAS dans le sudoers) : <span class="mono">systemctl reload|restart &lt;svc&gt;</span> · <span class="mono">nginx -s reload</span> · <span class="mono">apachectl graceful</span> · <span class="mono">caddy reload</span>. Sans le helper → écriture directe seulement (bac-à-sable), pas de reload.</div>
+    </div>
+    <div class="card">
+      <h3>⚙️ Types de cible supportés</h3>
+      <div class="muted" style="margin-bottom:12px">Chaque certificat peut avoir N cibles de déploiement ordonnées. Les paramètres se règlent par cible dans le détail d'un certificat (bouton « ⚙️ Cibles »). Voici le catalogue des types disponibles et leurs paramètres.</div>
+      <div class="tt-grid" id="ttGrid"></div>
+    </div>
+  </div>
+
+  <div class="pane" id="pane-secu">
+    <div class="card">
+      <h3>🔒 Modèle de sécurité de certfleet</h3>
+      <div class="muted" style="margin-bottom:6px">Ce module concentre des clés privées TLS : voici comment chaque mécanisme les protège.</div>
+    </div>
+
+    <div class="card">
+      <h3>🗝️ Clés privées — chiffrées au repos, jamais exposées</h3>
+      <div class="tt-field">• Les clés privées sont stockées en base <b>chiffrées AES-256-GCM</b> (coffre <span class="mono">lib/certvault.js</span>).</div>
+      <div class="tt-field">• La <b>clé maître</b> (<span class="mono">CERT_VAULT_KEY</span>) est <b>hors base</b> (Secret Kubernetes / variable d'env) → une sauvegarde de la base seule ne peut PAS déchiffrer les clés.</div>
+      <div class="tt-field">• L'API ne renvoie <b>jamais</b> une clé privée en lecture normale. Seul le téléchargement <b>clé/bundle</b> est possible, <b>réservé aux admins et tracé (audit log)</b>.</div>
+      <div class="tt-field">• Le certificat public (fullchain/chaîne/leaf) est, lui, librement téléchargeable (ce n'est pas un secret).</div>
+    </div>
+
+    <div class="card">
+      <h3>🚚 Déploiement — modèle PULL, clé chiffrée pour l'agent cible</h3>
+      <div class="tt-field">• L'<b>agent</b> (sur le serveur) se connecte à certfleet en <b>HTTPS sortant</b> et tire sa commande — <b>certfleet ne se connecte jamais au serveur</b>.</div>
+      <div class="tt-field">• Aucun <b>port ouvert</b> sur le serveur, aucun <b>identifiant du hub</b> stocké sur les cibles (pas de clé SSH/root vers eux).</div>
+      <div class="tt-field">• <b>Chiffrement hybride</b> : la clé privée est chiffrée en AES-256, et la clé AES est chiffrée en <b>RSA-OAEP avec la clé publique de l'agent cible</b> → seule cette machine peut la déchiffrer, même pas un autre agent, ni un lecteur de la base.</div>
+      <div class="tt-field">• L'agent <b>vérifie le certificat TLS</b> de certfleet (curl sans <span class="mono">-k</span>) → pas d'interception (MITM).</div>
+      <div class="tt-field">• Authentification de l'agent par <b>token</b> dédié (par machine).</div>
+    </div>
+
+    <div class="card">
+      <h3>🔧 Privilèges sur le serveur — moindre privilège</h3>
+      <div class="tt-field">• L'agent tourne sous un <b>compte de service dédié</b> (pas root).</div>
+      <div class="tt-field">• L'écriture dans <span class="mono">/etc</span> + le reload passent par un <b>helper root vetté</b> (<span class="mono">certfleet-cert-install</span>), autorisé en <b>sudoers NOPASSWD sur CE seul script</b> — <b>pas d'exécution root arbitraire</b>.</div>
+      <div class="tt-field">• Le reload est <b>contraint par whitelist</b> : <span class="mono">systemctl reload|restart &lt;svc&gt;</span>, <span class="mono">nginx -s reload</span>, <span class="mono">apachectl graceful</span>, <span class="mono">caddy reload</span> uniquement.</div>
+      <div class="tt-field">• Chemins de destination validés (absolus, sans <span class="mono">..</span>), clé écrite en <b>0600</b>, cert en 0644, écriture atomique.</div>
+    </div>
+
+    <div class="card">
+      <h3>🌐 Émission ACME & DNS</h3>
+      <div class="tt-field">• Émission centralisée par le hub (ACME/Let's Encrypt) — les agents ne parlent jamais à la CA.</div>
+      <div class="tt-field">• Validation <b>DNS-01</b> : seul un TXT <span class="mono">_acme-challenge</span> <b>temporaire</b> est posé puis <b>retiré</b> — aucun autre enregistrement DNS, domaine ou certificat existant n'est touché.</div>
+      <div class="tt-field">• <b>Token Gandi</b> stocké <b>chiffré</b> (coffre), jamais renvoyé en clair, à périmètre minimal (droits techniques DNS).</div>
+      <div class="tt-field">• Délégation CNAME suivie automatiquement (le TXT est écrit dans une zone pilotable, sans exposer le domaine principal).</div>
+    </div>
+
+    <div class="card">
+      <h3>📡 Supervision & contrôle</h3>
+      <div class="tt-field">• <b>Sonde TLS externe</b> : rouvre une vraie connexion et compare le <b>SHA-256</b> du certificat réellement servi (≠ lire la base) → détecte les copies périmées.</div>
+      <div class="tt-field">• Détection <b>flapping</b> : plusieurs sondes comparées → alerte si un endpoint sert des certificats incohérents (replica/copie obsolète).</div>
+      <div class="tt-field">• Workflow d'<b>approbation</b> des commandes d'agent (garde-fou côté canal ADM).</div>
+      <div class="tt-field">• Historique des émissions/déploiements + logs conservés par certificat.</div>
+    </div>
+
+    <div class="card">
+      <h3>👥 Accès (RBAC)</h3>
+      <div class="tt-field">• L’accès à l’interface et à l’API est gouverné par le jeton <b>ADMIN_TOKEN</b>. Placez certfleet derrière votre SSO ou votre reverse proxy pour une authentification plus fine.</div>
+      <div class="tt-field">• Le téléchargement de clé privée exige le rôle <b>administrateur</b> et est <b>journalisé</b>.</div>
+    </div>
+
+    <div class="card" style="border-left:4px solid var(--cm-amber)">
+      <h3>⚠️ Bonnes pratiques / points de vigilance</h3>
+      <div class="tt-field">• Définir <span class="mono">CERT_VAULT_KEY</span> en Secret K8s (hors base) et la <b>sauvegarder</b> dans un gestionnaire de secrets — sa perte rend les clés/token indéchiffrables.</div>
+      <div class="tt-field">• Roter périodiquement le <b>token Gandi</b> et la <span class="mono">CERT_VAULT_KEY</span>.</div>
+      <div class="tt-field">• Limiter le téléchargement de bundle (clé) aux cas de secours (l'installation normale se fait par push chiffré vers l'agent).</div>
+    </div>
+  </div>
+</div>
+
+<!-- Modales -->
+<div class="modal-bg" id="certModal"><div class="modal"><div class="modal-head"><h3 id="certModalTitle">Certificat</h3><button class="close-x" onclick="closeModal('certModal')">×</button></div>
+  <div class="modal-body">
+    <div class="row2">
+      <div><label>Nom courant (CN) *<span class="hi" title="Nom principal du certificat. Wildcard : *.example.com (couvre tous les sous-domaines). Ou un hôte précis : serveur.example.com.">ⓘ</span></label><input id="cCN" placeholder="*.example.net"></div>
+      <div><label>Nom convivial<span class="hi" title="Libellé lisible pour t'y retrouver dans l'inventaire (facultatif). Ex : Wildcard example.com.">ⓘ</span></label><input id="cFriendly" placeholder="Wildcard example.com"></div>
+    </div>
+    <label>Domaines / SAN (un par ligne — le 1er est primaire)<span class="hi" title="Tous les domaines couverts par le certificat, un par ligne. Le 1er = nom principal (CN). Un wildcard *.x couvre a.x, b.x… mais PAS x lui-même : ajoute alors x en 2e ligne. Le SAN doit inclure le nom par lequel les clients se connectent.">ⓘ</span></label>
+    <textarea id="cDomains" rows="3" placeholder="*.example.net&#10;example.net"></textarea>
+    <div class="row3">
+      <div><label>Environnement<span class="hi" title="Classement libre : prod / preprod / test. Purement indicatif.">ⓘ</span></label><input id="cEnv" placeholder="prod"></div>
+      <div><label>Propriétaire<span class="hi" title="Équipe ou personne responsable de ce certificat (facultatif).">ⓘ</span></label><input id="cOwner" placeholder="Infra"></div>
+      <div><label>Source<span class="hi" title="ACME = émis et renouvelé par certfleet (Let's Encrypt + Gandi). Monitoring = seulement surveillé (pas d'émission). Importé = certificat obtenu ailleurs, collé à la main.">ⓘ</span></label><select id="cSource"><option value="monitor">Monitoring</option><option value="acme">ACME</option><option value="imported">Importé</option></select></div>
+    </div>
+    <h3 style="margin-top:16px">Politique de renouvellement <span class="muted" style="font-weight:400">(appliquée aux lots suivants)</span></h3>
+    <div class="row3">
+      <div><label>CA<span class="hi" title="Autorité qui émet le certificat. Let's Encrypt = gratuit, validation de domaine (DV), recommandé. ZeroSSL/GTS = alternatives ACME. Gandi (OV/EV) = payant, validation d'organisation (rare).">ⓘ</span></label><select id="cPolicyCa"><option value="">—</option><option value="letsencrypt">Let's Encrypt</option><option value="zerossl">ZeroSSL</option><option value="gts">Google Trust Services</option><option value="gandi_ov">Gandi (OV/EV)</option></select></div>
+      <div><label>Challenge<span class="hi" title="Méthode de preuve de contrôle du domaine. DNS-01 = enregistrement TXT (OBLIGATOIRE pour un wildcard). HTTP-01 = fichier servi sur le port 80 (impossible pour un wildcard).">ⓘ</span></label><select id="cChallenge"><option value="dns-01">DNS-01</option><option value="http-01">HTTP-01</option></select></div>
+      <div><label>Fournisseur DNS<span class="hi" title="Où poser le TXT de validation DNS-01. Gandi LiveDNS ici. La délégation CNAME (ex. example.com → example.net) est suivie automatiquement.">ⓘ</span></label><select id="cDns"><option value="gandi">Gandi LiveDNS</option><option value="ovh">OVH</option><option value="manual">Manuel</option></select></div>
+    </div>
+    <div class="row2">
+      <div><label>Renouveler avant (% de la durée restante) <span class="muted">— % pas jours (ère 47j)</span><span class="hi" title="Renouvelle quand il reste ce pourcentage de la durée de vie (pas un nombre de jours fixe). 33 % = au tiers restant, adapté aux certificats courts (47 jours à venir).">ⓘ</span></label><input id="cRenewPct" type="number" min="10" max="90" value="33"></div>
+      <div style="display:flex;align-items:flex-end;gap:8px;padding-bottom:2px"><label style="margin:0"><input type="checkbox" id="cAuto" style="width:auto;vertical-align:-2px"> Renouvellement automatique<span class="hi" title="Marque ce certificat pour le renouvellement automatique. Indicateur pour l'instant : le cron d'auto-renouvellement est un lot à venir ; aujourd'hui l'émission se fait via le bouton Émettre.">ⓘ</span></label></div>
+    </div>
+    <label>Notes<span class="hi" title="Commentaire libre (contexte, responsable, particularités…).">ⓘ</span></label><textarea id="cNotes" rows="2"></textarea>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="closeModal('certModal')">Annuler</button><button class="btn btn-primary" id="cSaveBtn" onclick="saveCert()">Enregistrer</button></div>
+</div></div>
+
+<div class="modal-bg" id="epModal"><div class="modal" style="max-width:560px"><div class="modal-head"><h3 id="epModalTitle">Endpoint monitoré</h3><button class="close-x" onclick="closeModal('epModal')">×</button></div>
+  <div class="modal-body">
+    <label>Label</label><input id="eLabel" placeholder="Portail PaaS">
+    <div class="row3">
+      <div><label>Hôte *</label><input id="eHost" placeholder="portal.example.net"></div>
+      <div><label>Port</label><input id="ePort" type="number" placeholder="443"></div>
+      <div><label>Type</label><select id="eKind"></select></div>
+    </div>
+    <div class="row2">
+      <div><label>Cluster / groupe</label><input id="eCluster" placeholder="rke2-paas"></div>
+      <div><label>SNI (optionnel)</label><input id="eSni" placeholder="si différent de l'hôte"></div>
+    </div>
+    <label>Rattacher à un certificat (optionnel — active la détection de mismatch)</label>
+    <select id="eCert"><option value="">— aucun —</option></select>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="closeModal('epModal')">Annuler</button><button class="btn btn-primary" id="eSaveBtn" onclick="saveEp()">Enregistrer</button></div>
+</div></div>
+
+<div class="modal-bg" id="detailModal"><div class="modal"><div class="modal-head"><h3 id="detTitle">Détail</h3><button class="close-x" onclick="closeModal('detailModal')">×</button></div>
+  <div class="modal-body" id="detBody"></div>
+</div></div>
+
+<div class="modal-bg" id="probeModal"><div class="modal" style="max-width:620px"><div class="modal-head"><h3>🧪 Tester une cible TLS</h3><button class="close-x" onclick="closeModal('probeModal')">×</button></div>
+  <div class="modal-body">
+    <div class="row3">
+      <div><label>Hôte *</label><input id="pHost" placeholder="portal.example.net"></div>
+      <div><label>Port</label><input id="pPort" type="number" value="443"></div>
+      <div><label>SNI</label><input id="pSni" placeholder="optionnel"></div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:10px" onclick="runProbe(this)">Sonder</button>
+    <div id="pResult" style="margin-top:14px"></div>
+  </div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = window.CERTFLEET_AUTH.apiBase || '';
+const BASE = '/api/certificates';
+let CERTS=[], ENDPOINTS=[], TYPES=[], OVERVIEW={}, AGENTS=[], DEPLOYS=[];
+
+function toast(m,t){const el=document.getElementById('toast');el.textContent=m;el.className='toast show '+(t||'');setTimeout(()=>el.classList.remove('show'),3400);}
+async function api(path,opts){opts=opts||{};opts.headers={...(opts.headers||{}),'Authorization':'Bearer '+CERTFLEET_AUTH.getToken()};if(opts.body&&typeof opts.body==='object'){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(opts.body);}const r=await fetch(API+BASE+path,opts);if(!r.ok){let m='HTTP '+r.status;try{const d=await r.json();if(d.error)m=d.error;}catch{}throw new Error(m);}return r.json();}
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtDate=s=>s?new Date(s).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
+const fmtDT=s=>s?new Date(s).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+
+const STATUS_META={ok:['b-ok','✅ OK'],warning:['b-warn','⏳ Bientôt'],critical:['b-crit','⚠️ Critique'],expired:['b-exp','⛔ Expiré'],unknown:['b-unk','❔ Inconnu'],mismatch:['b-mism','🔀 Mismatch'],unreachable:['b-unreach','🔌 Injoignable'],flapping:['b-exp','🔀 Flapping (instable)']};
+function statusBadge(s){const m=STATUS_META[s]||STATUS_META.unknown;return `<span class="badge ${m[0]}">${m[1]}</span>`;}
+function agentName(agentId){const a=AGENTS.find(x=>x.agent_id===agentId);return a?(a.hostname||a.agent_id):agentId;}
+function depBadge(d){const s=d.status==='success'?'b-ok':d.status==='failed'?'b-exp':(d.cmd_status==='running'?'b-warn':'b-unk');const lbl=d.status==='success'?'✅ Déployé':d.status==='failed'?'❌ Échec':(d.cmd_status==='running'?'⏳ En cours':(d.cmd_status==='approved'?'⏳ Attente agent':'⏳ En attente'));return `<span class="badge ${s}">${lbl}</span>`;}
+function guideHtml(t){
+  const g=t&&t.guide; if(!g) return '';
+  const steps=(a)=>a&&a.length?`<ol style="margin:3px 0 8px 18px;padding:0">${a.map(s=>`<li style="margin-bottom:3px">${esc(s)}</li>`).join('')}</ol>`:'';
+  const fh=g.fields?Object.entries(g.fields).map(([k,v])=>`<div class="tt-field">• <b class="mono">${esc(k)}</b> : ${esc(v)}</div>`).join(''):'';
+  return `<div style="background:#f0f6ff;border:1px solid #cfe0ff;border-radius:8px;padding:11px 12px;margin-top:8px;font-size:12px">
+    <div style="font-weight:800;margin-bottom:4px">ℹ️ ${esc(t.label)} — mode d'emploi (pas à pas)</div>
+    ${g.what?`<div style="margin-bottom:6px">${esc(g.what)}</div>`:''}
+    ${g.prepare?`<div style="font-weight:700">🔧 Préparer le serveur</div>${steps(g.prepare)}`:''}
+    ${fh?`<div style="font-weight:700">📝 Champs à remplir</div><div style="margin:4px 0 8px">${fh}</div>`:''}
+    ${g.verify?`<div style="font-weight:700">✅ Vérifier ensuite</div><div class="mono" style="margin:2px 0 8px;font-size:11px;white-space:pre-wrap">${esc(g.verify)}</div>`:''}
+    ${g.gotcha?`<div class="tt-note" style="margin:0">⚠️ ${esc(g.gotcha)}</div>`:''}
+    ${t.mode==='agent'?`<div style="margin-top:8px"><b>🖥️ Commandes serveur (en root) — helper + sudoers</b> :
+      <pre style="background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;white-space:pre-wrap;margin-top:4px"># 1) installer le helper root
+curl -fsSL https://certfleet.example.com/api/adm/cert-install.sh -o /usr/local/bin/certfleet-cert-install
+chmod 0755 /usr/local/bin/certfleet-cert-install
+chown root:root /usr/local/bin/certfleet-cert-install
+
+# 2) creer /etc/sudoers.d/certfleet-cert-install avec EXACTEMENT cette ligne :
+srv_certfleet-agent ALL=(root) NOPASSWD: /usr/local/bin/certfleet-cert-install
+
+# 3) permissions + validation
+chmod 0440 /etc/sudoers.d/certfleet-cert-install
+visudo -cf /etc/sudoers.d/certfleet-cert-install</pre>
+      <div class="muted" style="font-size:10.5px">💡 Plus simple : (ré)exécute la commande d'enrôlement de <b>IT › ADM</b> — <span class="mono">install.sh</span> pose le helper + le sudoers automatiquement. Remplace <span class="mono">srv_certfleet-agent</span> par le compte de service de ton agent s'il diffère.</div></div>`:''}
+  </div>`;
+}
+function barColor(days){if(days==null)return '#cbd5e1';if(days<0)return 'var(--cm-red)';if(days<=7)return '#ea580c';if(days<=21)return 'var(--cm-amber)';if(days<=45)return '#65a30d';return 'var(--cm-green)';}
+
+async function loadAll(){
+  try{
+    const [ov,certs,eps,types,agents,deploys]=await Promise.all([
+      api('/overview'),api('/'),api('/monitor/endpoints'),api('/target-types'),api('/agents').catch(()=>[]),api('/deployments/overview').catch(()=>[])
+    ]);
+    OVERVIEW=ov;CERTS=certs;ENDPOINTS=eps;TYPES=types;AGENTS=agents||[];DEPLOYS=deploys||[];
+    renderKpis();renderTimeline();renderCerts();renderEndpoints();renderTypes();renderDeployOverview();fillSelectors();
+  }catch(e){toast('Erreur chargement : '+e.message,'err');}
+}
+
+function renderKpis(){
+  const cs=OVERVIEW.cert_status||{},es=OVERVIEW.endpoint_status||{};
+  const tiles=[
+    {v:OVERVIEW.certificates||0,l:'Certificats',c:'var(--cm-blue)'},
+    {v:(cs.ok||0),l:'OK',c:'var(--cm-green)'},
+    {v:(cs.warning||0),l:'Bientôt ≤21j',c:'var(--cm-amber)'},
+    {v:(cs.critical||0),l:'Critique ≤7j',c:'#ea580c'},
+    {v:(cs.expired||0),l:'Expirés',c:'var(--cm-red)'},
+    {v:OVERVIEW.endpoints||0,l:'Endpoints suivis',c:'var(--cm-purple)'},
+  ];
+  document.getElementById('kpis').innerHTML=tiles.map(t=>`<div class="kpi" style="border-left-color:${t.c}"><div class="kpi-val" style="color:${t.c}">${t.v}</div><div class="kpi-lbl">${t.l}</div></div>`).join('');
+}
+
+function renderTimeline(){
+  const up=(OVERVIEW.upcoming||[]).slice(0,14);
+  const el=document.getElementById('timeline');
+  if(!up.length){el.innerHTML='<div class="empty">Aucune échéance connue. Ajoute un certificat ou un endpoint monitoré, puis lance « Sonder tout ».</div>';return;}
+  const maxD=90;
+  el.innerHTML=up.map(u=>{
+    const d=u.days_left;
+    const pct=d==null?0:Math.max(2,Math.min(100,100-(Math.max(0,d)/maxD*100)));
+    const col=barColor(d);
+    const icon=u.kind==='endpoint'?'📡':'📜';
+    const dtxt=d==null?'—':(d<0?`expiré (${-d}j)`:`${d} j`);
+    return `<div class="tl-item">
+      <div class="tl-name" title="${esc(u.name)}">${icon} ${esc(u.name)}${u.auto_renew?' <span class="badge b-ok" style="font-size:9px">auto</span>':''}</div>
+      <div class="tl-bar"><div class="tl-fill" style="width:${pct}%;background:${col}"></div></div>
+      <div class="tl-right"><div class="tl-days" style="color:${col}">${dtxt}</div><div class="muted">${fmtDate(u.not_after)}</div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderCerts(){
+  const q=(document.getElementById('invSearch').value||'').toLowerCase();
+  const sf=document.getElementById('invStatus').value;
+  let rows=CERTS.filter(c=>{
+    const hay=((c.friendly_name||'')+' '+(c.common_name||'')+' '+(c.owner||'')+' '+((c.domains||[]).join(' '))).toLowerCase();
+    return (!q||hay.includes(q))&&(!sf||c.status===sf);
+  });
+  document.getElementById('invCount').textContent=rows.length+' / '+CERTS.length;
+  const tb=document.querySelector('#invTable tbody');
+  if(!rows.length){tb.innerHTML='<tr><td colspan="7"><div class="empty">Aucun certificat.</div></td></tr>';return;}
+  tb.innerHTML=rows.map(c=>{
+    const doms=(c.domains||[]);
+    const domTxt=doms.slice(0,2).map(esc).join(', ')+(doms.length>2?` <span class="muted">+${doms.length-2}</span>`:'');
+    return `<tr>
+      <td><b>${esc(c.friendly_name||c.common_name)}</b><div class="muted mono">${esc(c.common_name)}</div></td>
+      <td class="mono">${domTxt||'—'}</td>
+      <td>${esc(c.ca||'—')}</td>
+      <td>${statusBadge(c.status)} <span class="muted">${c.days_left!=null?(c.days_left<0?'expiré':c.days_left+' j'):''}</span><div class="muted">${fmtDate(c.not_after)}</div></td>
+      <td>${c.target_count||0} <span class="muted">cible(s)</span></td>
+      <td>${c.auto_renew?'<span class="badge b-ok">auto</span>':'<span class="badge b-unk">manuel</span>'}</td>
+      <td><div class="actions">
+        <button class="iconbtn" title="Détail / cibles" onclick="openDetail(${c.id})">⚙️</button>
+        <button class="iconbtn" title="Modifier" onclick="openCertModal(${c.id})">✏️</button>
+        <button class="iconbtn" title="Supprimer" onclick="delCert(${c.id})">🗑️</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderEndpoints(){
+  const q=(document.getElementById('monSearch').value||'').toLowerCase();
+  const cf=document.getElementById('monCluster').value;
+  let rows=ENDPOINTS.filter(e=>{
+    const hay=((e.label||'')+' '+(e.host||'')+' '+(e.cluster||'')).toLowerCase();
+    return (!q||hay.includes(q))&&(!cf||(e.cluster||'')===cf);
+  });
+  const tb=document.querySelector('#monTable tbody');
+  if(!rows.length){tb.innerHTML='<tr><td colspan="7"><div class="empty">Aucun endpoint monitoré. « ➕ Endpoint monitoré » pour en ajouter (les URLs de tes clusters K8s, appliances, sites…).</div></td></tr>';return;}
+  tb.innerHTML=rows.map(e=>{
+    const dl=e.days_left;
+    return `<tr>
+      <td><b>${esc(e.label||e.host)}</b><div class="muted mono">${esc(e.host)}:${e.port}${e.sni?' · SNI '+esc(e.sni):''}</div></td>
+      <td>${e.cluster?esc(e.cluster):'<span class="muted">—</span>'}</td>
+      <td>${statusBadge(e.last_status||'unknown')}${e.last_error?`<div class="muted" title="${esc(e.last_error)}">${esc(e.last_error).slice(0,40)}</div>`:''}</td>
+      <td>${e.last_issuer?esc(e.last_issuer):'<span class="muted">—</span>'}<div class="muted mono">${e.last_subject?esc(e.last_subject):''}</div></td>
+      <td>${e.last_not_after?fmtDate(e.last_not_after):'<span class="muted">—</span>'} ${dl!=null?`<span class="muted">(${dl<0?'expiré':dl+' j'})</span>`:''}</td>
+      <td class="muted">${e.last_checked?fmtDT(e.last_checked):'jamais'}</td>
+      <td><div class="actions">
+        <button class="iconbtn" title="Sonder maintenant" onclick="checkEp(${e.id},this)">🔄</button>
+        <button class="iconbtn" title="Modifier" onclick="openEpModal(${e.id})">✏️</button>
+        <button class="iconbtn" title="Supprimer" onclick="delEp(${e.id})">🗑️</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTypes(){
+  const modColor={agent:'b-blue',api:'b-warn',k8s:'b-mism'};
+  document.getElementById('ttGrid').innerHTML=TYPES.map(t=>`
+    <div class="tt-card"${t.status?.tested?' style="border-color:#86efac;box-shadow:0 0 0 1px #86efac inset"':''}>
+      <h4>${t.icon||'🔌'} ${esc(t.label)} <span class="tt-mode badge ${modColor[t.mode]||'b-unk'}">${t.mode}</span>${t.status?.tested?'<span class="badge b-ok" title="Validé pour l\'équipe">✅ Testé</span>':'<span class="badge b-unk" title="Pas encore validé">⏳ Non testé</span>'}</h4>
+      <div class="muted mono">${esc(t.type)}</div>
+      ${t.status?.tested?`<div class="tt-note" style="color:#166534;background:#dcfce7">✅ <b>Testé</b> — utilisable par l'équipe. Validé par <b>${esc(t.status.tested_by||'?')}</b>${t.status.tested_at?` le ${new Date(t.status.tested_at).toLocaleDateString('fr-FR')}`:''}${t.status.note?`<br><span class="muted">« ${esc(t.status.note)} »</span>`:''}</div>`:''}
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:6px 0;cursor:pointer"><input type="checkbox" ${t.status?.tested?'checked':''} onclick="toggleTypeTested('${t.type}',this.checked,this)"> Marquer ce type comme <b>testé</b> (visible par l'équipe)</label>
+      ${t.note?`<div class="tt-note">${esc(t.note)}</div>`:''}
+      ${t.mode==='agent'?`<div class="tt-note" style="color:#1e40af;background:#e0edff">🔧 Cible <b>agent</b> — nécessite l'agent natif + helper + sudoers (voir « <b>Prérequis cible agent</b> » en haut de cet onglet).</div>`:''}
+      ${t.mode==='api'?`<div class="tt-note" style="color:#92400e;background:#fffbeb">🔌 <b>Connecteur API (push)</b> — aucun agent requis, certfleet pousse via l'API de l'appliance. Lot suivant.</div>`:''}
+      ${t.mode==='k8s'?`<div class="tt-note" style="color:#6d28d9;background:#f3e8ff">☸️ <b>Monitoring seul</b> — cert-manager reste maître de l'émission ; certfleet supervise.</div>`:''}
+      <div style="margin-top:6px">${(t.fields||[]).map(f=>`<div class="tt-field">• <b>${esc(f.label)}</b> <span class="muted">(${f.type}${f.required?', requis':''})</span></div>`).join('')}</div>
+      ${guideHtml(t)}
+    </div>`).join('');
+}
+async function toggleTypeTested(type,on,el){
+  let note='';
+  if(on){ note=prompt('Note optionnelle pour l\'équipe (ex. « testé sur monitor-01.example.com le 26/08 ») :','')||''; }
+  try{
+    const r=await api('/target-types/'+type+'/tested',{method:'POST',body:{tested:on,note:note.trim()}});
+    const t=TYPES.find(x=>x.type===type); if(t) t.status=r.status;
+    toast(on?'Type marqué « testé » — visible par l\'équipe ✅':'Marque « testé » retirée','ok');
+    renderTypes();
+  }catch(e){ if(el) el.checked=!on; toast('Erreur : '+e.message+(e.message.includes('administrateur')?'':''),'err'); }
+}
+
+async function refreshDeployments(btn){
+  const o=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='↻ …';}
+  try{ DEPLOYS=await api('/deployments/overview'); renderDeployOverview(); toast('Statuts actualisés','ok'); }
+  catch(e){ toast('Erreur : '+e.message,'err'); }
+  finally{ if(btn){btn.disabled=false;btn.textContent=o;} }
+}
+function renderDeployOverview(){
+  const q=(document.getElementById('depSearch')?.value||'').toLowerCase();
+  let rows=DEPLOYS.filter(d=>{
+    const p=d.params||{};
+    const hay=((d.friendly_name||'')+' '+(d.common_name||'')+' '+(d.name||'')+' '+agentName(d.agent_id)+' '+(p.cert_path||p.pem_path||'')+' '+(p.base_url||'')).toLowerCase();
+    return !q||hay.includes(q);
+  });
+  const el=document.getElementById('depOverview');
+  if(!rows.length){el.innerHTML='<div class="empty">Aucune cible de déploiement. Ajoute des cibles depuis le détail d\'un certificat (⚙️).</div>';return;}
+  // groupe par type
+  const groups={};
+  rows.forEach(d=>{ (groups[d.type]=groups[d.type]||[]).push(d); });
+  const order=TYPES.map(t=>t.type).filter(t=>groups[t]);
+  el.innerHTML=order.map(type=>{
+    const td=TYPES.find(x=>x.type===type)||{};
+    const items=groups[type];
+    return `<div style="margin-bottom:18px">
+      <h3>${td.icon||'🔌'} ${esc(td.label||type)} <span class="badge b-blue" style="font-size:10px">${items.length}</span> <span class="tt-mode badge ${td.mode==='agent'?'b-blue':td.mode==='api'?'b-warn':'b-mism'}" style="font-weight:700">${td.mode||''}</span></h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Certificat</th><th>Serveur / cible</th><th>Chemin</th><th title="Inclure cette cible dans le (re)déploiement automatique lors du renouvellement">Auto-déploiement</th><th>Expiration cert</th><th>Dernier déploiement</th><th></th></tr></thead><tbody>
+        ${items.map(d=>{ const p=d.params||{}; const path=p.cert_path||p.pem_path||p.base_url||p.keystore_path||'—';
+          const dep=d.last_status?depBadge({status:d.last_status,cmd_status:d.cmd_status}):'<span class="badge b-unk">jamais</span>';
+          const when=d.last_at?fmtDT(d.last_at):'';
+          return `<tr>
+            <td><b>${esc(d.friendly_name||d.common_name)}</b><div class="muted mono">${esc(d.common_name)}</div></td>
+            <td>${d.agent_id?('🖥 '+esc(agentName(d.agent_id))):'<span class="muted">—</span>'}${d.name?`<div class="muted">${esc(d.name)}</div>`:''}</td>
+            <td class="mono" style="font-size:11px">${esc(path)}</td>
+            <td style="text-align:center"><label style="cursor:pointer" title="Coché = ce serveur reçoit automatiquement le certificat à chaque renouvellement"><input type="checkbox" ${d.enabled!==false?'checked':''} onchange="toggleTargetEnabled(${d.target_id},this.checked,this)" style="width:auto;transform:scale(1.2);cursor:pointer"></label></td>
+            <td>${statusBadge(d.cert_status)} <span class="muted">${d.days_left!=null?(d.days_left<0?'expiré':d.days_left+'j'):''}</span><div class="muted">${fmtDate(d.not_after)}</div></td>
+            <td>${dep} <div class="muted">${when}</div></td>
+            <td><div class="actions"><button class="iconbtn" title="Renommer / commentaire" onclick="renameTarget(${d.target_id})">✏️</button><button class="iconbtn" title="Déployer maintenant" onclick="deployFromOverview(${d.target_id},this)">🚀</button></div></td>
+          </tr>`; }).join('')}
+      </tbody></table></div>
+    </div>`;
+  }).join('');
+}
+async function renameTarget(tid){
+  const cur=(DEPLOYS.find(x=>x.target_id===tid)||{}).name||'';
+  const name=prompt('Nom / commentaire de cette cible (ex. « VSFTP front ») :', cur);
+  if(name===null) return;
+  try{
+    await api('/targets/'+tid+'/name',{method:'POST',body:{name:name.trim()}});
+    toast('Commentaire mis à jour','ok');
+    DEPLOYS=await api('/deployments/overview'); renderDeployOverview();
+    if(detId){ try{ detData=await api('/'+detId); renderDetail(); }catch{} }
+  }catch(e){ toast('Erreur : '+e.message,'err'); }
+}
+async function toggleTargetEnabled(tid,enabled,el){
+  if(el)el.disabled=true;
+  try{
+    await api('/targets/'+tid+'/enabled',{method:'POST',body:{enabled:!!enabled}});
+    toast(enabled?'Auto-déploiement activé pour cette cible':'Auto-déploiement désactivé (exclue du renouvellement auto)','ok');
+    DEPLOYS=await api('/deployments/overview'); renderDeployOverview();
+  }catch(e){ toast('Erreur : '+e.message,'err'); if(el){el.checked=!enabled;el.disabled=false;} }
+}
+async function deployFromOverview(tid,btn){
+  const o=btn.textContent; btn.disabled=true; btn.textContent='⏳';
+  try{
+    const r=await api('/targets/'+tid+'/deploy',{method:'POST',body:{}});
+    toast('Déploiement envoyé à '+(r.agent_id||'l\'agent')+' — exécution au prochain passage','ok');
+    let n=0; const iv=setInterval(async()=>{ n++; try{ DEPLOYS=await api('/deployments/overview'); renderDeployOverview(); }catch{} if(n>=12) clearInterval(iv); }, 15000);
+  }catch(e){ toast('Erreur : '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent=o; }
+}
+
+function fillSelectors(){
+  const clusters=[...new Set(ENDPOINTS.map(e=>e.cluster).filter(Boolean))].sort();
+  const sel=document.getElementById('monCluster');const cur=sel.value;
+  sel.innerHTML='<option value="">Tous les clusters</option>'+clusters.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value=cur;
+  const ec=document.getElementById('eCert');
+  ec.innerHTML='<option value="">— aucun —</option>'+CERTS.map(c=>`<option value="${c.id}">${esc(c.friendly_name||c.common_name)}</option>`).join('');
+  const ek=document.getElementById('eKind');
+  if(!ek.dataset.filled){ek.innerHTML=Object.entries(TLS_KINDS_JS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');ek.dataset.filled='1';}
+}
+const TLS_KINDS_JS={https:'HTTPS (443)',https8443:'HTTPS (8443)',imaps:'IMAPS (993)',pop3s:'POP3S (995)',ldaps:'LDAPS (636)',smtps:'SMTPS (465)',ftps:'FTPS (990)'};
+
+function switchTab(p){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.pane===p));document.querySelectorAll('.pane').forEach(x=>x.classList.toggle('active',x.id==='pane-'+p));}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// ── Certificat ──
+let editCertId=null;
+function openCertModal(id){
+  editCertId=id||null;const c=id?CERTS.find(x=>x.id===id):{};
+  document.getElementById('certModalTitle').textContent=id?'Modifier le certificat':'Nouveau certificat';
+  document.getElementById('cCN').value=c.common_name||'';document.getElementById('cFriendly').value=c.friendly_name||'';
+  document.getElementById('cDomains').value=(c.domains||[]).join('\n');
+  document.getElementById('cEnv').value=c.environment||'';document.getElementById('cOwner').value=c.owner||'';
+  document.getElementById('cSource').value=c.source||'monitor';
+  document.getElementById('cPolicyCa').value=c.policy_ca||'';document.getElementById('cChallenge').value=c.policy_challenge||'dns-01';
+  document.getElementById('cDns').value=c.policy_dns_provider||'gandi';document.getElementById('cRenewPct').value=c.renew_before_pct||33;
+  document.getElementById('cAuto').checked=!!c.auto_renew;document.getElementById('cNotes').value=c.notes||'';
+  document.getElementById('certModal').classList.add('open');
+}
+async function saveCert(){
+  const body={
+    common_name:document.getElementById('cCN').value.trim(),
+    friendly_name:document.getElementById('cFriendly').value.trim(),
+    domains:document.getElementById('cDomains').value.split('\n').map(s=>s.trim()).filter(Boolean),
+    environment:document.getElementById('cEnv').value.trim(),owner:document.getElementById('cOwner').value.trim(),
+    source:document.getElementById('cSource').value,policy_ca:document.getElementById('cPolicyCa').value,
+    policy_challenge:document.getElementById('cChallenge').value,policy_dns_provider:document.getElementById('cDns').value,
+    renew_before_pct:parseInt(document.getElementById('cRenewPct').value,10)||33,
+    auto_renew:document.getElementById('cAuto').checked,notes:document.getElementById('cNotes').value.trim(),
+  };
+  if(!body.common_name){toast('CN requis','err');return;}
+  const btn=document.getElementById('cSaveBtn');btn.disabled=true;
+  try{ if(editCertId)await api('/'+editCertId,{method:'PUT',body}); else await api('/',{method:'POST',body});
+    closeModal('certModal');toast('Certificat enregistré','ok');await loadAll();
+  }catch(e){toast('Erreur : '+e.message,'err');}finally{btn.disabled=false;}
+}
+async function delCert(id){if(!confirm('Supprimer ce certificat et ses cibles/endpoints liés ?'))return;try{await api('/'+id,{method:'DELETE'});toast('Supprimé','ok');await loadAll();}catch(e){toast('Erreur : '+e.message,'err');}}
+
+// ── Endpoint monitoré ──
+let editEpId=null;
+function openEpModal(id){
+  editEpId=id||null;const e=id?ENDPOINTS.find(x=>x.id===id):{};
+  fillSelectors();
+  document.getElementById('epModalTitle').textContent=id?'Modifier l\'endpoint':'Nouvel endpoint monitoré';
+  document.getElementById('eLabel').value=e.label||'';document.getElementById('eHost').value=e.host||'';
+  document.getElementById('ePort').value=e.port||'';document.getElementById('eKind').value=e.kind||'https';
+  document.getElementById('eCluster').value=e.cluster||'';document.getElementById('eSni').value=e.sni||'';
+  document.getElementById('eCert').value=e.certificate_id||'';
+  document.getElementById('epModal').classList.add('open');
+}
+async function saveEp(){
+  const body={label:document.getElementById('eLabel').value.trim(),host:document.getElementById('eHost').value.trim(),
+    port:parseInt(document.getElementById('ePort').value,10)||null,kind:document.getElementById('eKind').value,
+    cluster:document.getElementById('eCluster').value.trim(),sni:document.getElementById('eSni').value.trim(),
+    certificate_id:document.getElementById('eCert').value||null};
+  if(!body.host){toast('Hôte requis','err');return;}
+  const btn=document.getElementById('eSaveBtn');btn.disabled=true;
+  try{ if(editEpId)await api('/monitor/endpoints/'+editEpId,{method:'PUT',body}); else await api('/monitor/endpoints',{method:'POST',body});
+    closeModal('epModal');toast('Endpoint enregistré','ok');
+    if(!editEpId&&body.host){/* sonde immédiate après création */}
+    await loadAll();
+  }catch(e){toast('Erreur : '+e.message,'err');}finally{btn.disabled=false;}
+}
+async function delEp(id){if(!confirm('Supprimer cet endpoint monitoré ?'))return;try{await api('/monitor/endpoints/'+id,{method:'DELETE'});toast('Supprimé','ok');await loadAll();}catch(e){toast('Erreur : '+e.message,'err');}}
+async function checkEp(id,btn){const o=btn.textContent;btn.textContent='⏳';btn.disabled=true;try{const r=await api('/monitor/endpoints/'+id+'/check',{method:'POST'});toast(r.ok?('Sondé : '+(r.subject_cn||'')+' — '+statusText(r.status)):('Injoignable : '+(r.error||'')),r.ok?'ok':'err');await loadAll();}catch(e){toast('Erreur : '+e.message,'err');}finally{btn.textContent=o;btn.disabled=false;}}
+function statusText(s){return (STATUS_META[s]||['','?'])[1];}
+async function checkAll(btn){const o=btn.innerHTML;btn.innerHTML='<span class="spin"></span> Sonde…';btn.disabled=true;try{const r=await api('/monitor/check-all',{method:'POST'});toast(`Sonde terminée : ${r.ok}/${r.checked} OK`,'ok');await loadAll();}catch(e){toast('Erreur : '+e.message,'err');}finally{btn.innerHTML=o;btn.disabled=false;}}
+
+// ── Détail + éditeur de cibles ──
+let detId=null,detData=null;
+async function openDetail(id){
+  detId=id;
+  try{detData=await api('/'+id);}catch(e){toast('Erreur : '+e.message,'err');return;}
+  document.getElementById('detTitle').textContent=(detData.friendly_name||detData.common_name);
+  renderDetail();document.getElementById('detailModal').classList.add('open');
+}
+function renderDetail(){
+  const c=detData;
+  const tgts=c.targets||[];
+  const opts=TYPES.map(t=>`<option value="${t.type}">${t.icon||''} ${esc(t.label)}</option>`).join('');
+  document.getElementById('detBody').innerHTML=`
+    <div class="row3">
+      <div><div class="muted">Statut</div>${statusBadge(c.status)} <b>${c.days_left!=null?(c.days_left<0?'expiré':c.days_left+' j'):''}</b></div>
+      <div><div class="muted">Expiration</div><b>${fmtDate(c.not_after)}</b></div>
+      <div><div class="muted">Renouvellement</div>${c.auto_renew?'<span class="badge b-ok">auto</span>':'<span class="badge b-unk">manuel</span>'} ${esc(c.policy_ca||'')} ${c.renew_before_pct||33}% <button class="btn btn-sm" style="margin-left:6px" onclick="toggleAuto(${c.auto_renew?0:1},this)" title="Active/désactive le renouvellement automatique (cron : ré-émet au seuil % + redéploie sur les agents + reload)">${c.auto_renew?'⏸ Désactiver auto':'▶️ Activer auto'}</button></div>
+    </div>
+    <div class="muted mono" style="margin-top:8px">${(c.domains||[]).map(d=>esc(d.domain||d)).join(', ')}</div>
+
+    <div class="card" style="background:var(--cm-bg);margin-top:12px">
+      <h3>🔏 Émission / renouvellement ACME <span class="muted" style="font-weight:400">(DNS-01 via Gandi)</span></h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="issueEnv" style="width:auto">
+          <option value="staging">Staging (test — certificat non fiable)</option>
+          <option value="production">Production (Let's Encrypt)</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="issueBtn" onclick="certIssue(this)">Émettre / Renouveler</button>
+        <span id="issueStatus" class="muted">${c.issue_status==='running'?'⏳ en cours…':''}</span>
+      </div>
+      ${c.last_issue_error?`<div class="tt-note" style="color:var(--cm-red);background:#fee2e2">Dernière erreur : ${esc(c.last_issue_error)}</div>`:''}
+      <pre id="issueLog" style="${c.issue_log?'':'display:none;'}margin-top:8px;background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;max-height:170px;overflow:auto;white-space:pre-wrap">${esc(c.issue_log||'')}</pre>
+      ${c.leaf_pem?`<div style="margin-top:10px"><div class="muted">Chaîne obtenue — émetteur <b>${esc(c.ca||'')}</b>, expire le <b>${fmtDate(c.not_after)}</b>.</div>
+        <div class="actions" style="margin:8px 0">
+          <button class="btn btn-sm" onclick="dl('fullchain')">⬇ Fullchain</button>
+          <button class="btn btn-sm" onclick="dl('chain')">⬇ Chaîne</button>
+          <button class="btn btn-sm" onclick="dl('leaf')">⬇ Certificat seul</button>
+          <button class="btn btn-sm" onclick="dl('key')" title="Clé privée — réservé admin, tracé">⬇ Clé privée 🔒</button>
+          <button class="btn btn-sm" onclick="dl('bundle')" title="fullchain + clé, pour installation manuelle — réservé admin, tracé">⬇ Bundle cert+clé 🔒</button>
+        </div>
+        <div class="muted" style="font-size:11px">🔒 Clé/bundle = réservés aux admins et tracés (audit). Fallback manuel si l'agent est indisponible ; sinon la clé reste chiffrée, poussée uniquement vers l'agent.</div>
+        <textarea readonly rows="6" style="width:100%;font-family:monospace;font-size:10px;margin-top:4px">${esc([c.leaf_pem,c.chain_pem].filter(Boolean).join('\n'))}</textarea></div>`:''}
+    </div>
+
+    <h3 style="margin:16px 0 8px">⚙️ Cibles de déploiement (${tgts.length})</h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>Type</th><th>Nom</th><th>Ordre</th><th>Actif</th><th></th></tr></thead><tbody>
+      ${tgts.length?tgts.map(t=>`<tr><td><b>${esc((TYPES.find(x=>x.type===t.type)||{}).label||t.type)}</b><div class="muted mono">${esc(t.type)}</div></td><td>${esc(t.name||'—')}${t.agent_id?`<div class="muted mono">🖥 ${esc(agentName(t.agent_id))}</div>`:''}</td><td>${t.deploy_order||0}</td><td>${t.enabled?'✅':'⏸'}</td><td><div class="actions"><button class="iconbtn" title="Modifier les paramètres de cette cible" onclick="editTarget(${t.id})">✏️</button><button class="iconbtn" title="Déployer le certificat sur cette cible" onclick="deployTarget(${t.id},this)">🚀</button><button class="iconbtn" title="Supprimer" onclick="delTarget(${t.id})">🗑️</button></div></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty">Aucune cible. Ajoute-en une ci-dessous.</div></td></tr>'}
+    </tbody></table></div>
+    <div class="card" style="background:var(--cm-bg);margin-top:12px">
+      <h3>➕ Ajouter une cible</h3>
+      <div class="row3">
+        <div><label>Type</label><select id="tType" onchange="renderTargetFields()">${opts}</select></div>
+        <div><label>Nom</label><input id="tName" placeholder="ex : nginx front prod"></div>
+        <div><label>Ordre</label><input id="tOrder" type="number" value="0"></div>
+      </div>
+      <div id="tFields"></div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary btn-sm" id="tSubmitBtn" onclick="addTarget()">Ajouter la cible</button>
+        <button class="btn btn-sm" id="tCancelBtn" style="display:none" onclick="cancelEditTarget()">Annuler</button>
+        <span id="tEditHint" class="muted" style="font-size:11px"></span>
+      </div>
+    </div>
+    <h3 style="margin:16px 0 8px">🚀 Déploiements (${(c.deployments||[]).length})</h3>
+    ${(c.deployments||[]).length?`<div style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Cible</th><th>Statut</th><th>Détail</th></tr></thead><tbody>${c.deployments.map(d=>`<tr><td class="muted">${fmtDT(d.started_at)}</td><td>${esc(d.target_name||d.target_type||'—')}${d.target_agent?`<div class="muted mono">🖥 ${esc(agentName(d.target_agent))}</div>`:''}</td><td>${depBadge(d)}</td><td class="muted mono" style="max-width:340px;white-space:pre-wrap;font-size:10.5px">${esc((d.cmd_result||d.log||'').slice(0,300))}</td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Aucun déploiement. Utilise 🚀 sur une cible ci-dessus.</div>'}
+
+    <h3 style="margin:16px 0 8px">📡 Endpoints liés (${(c.endpoints||[]).length})</h3>
+    ${(c.endpoints||[]).length?('<div class="muted mono">'+c.endpoints.map(e=>esc(e.host+':'+e.port)+' '+statusText(e.last_status||'unknown')).join('<br>')+'</div>'):'<div class="muted">Aucun. Lie un endpoint dans l\'onglet Monitoring pour vérifier ce certificat en réel.</div>'}
+  `;
+  renderTargetFields();
+}
+function renderTargetFields(){
+  const t=TYPES.find(x=>x.type===document.getElementById('tType').value);
+  if(!t){document.getElementById('tFields').innerHTML='';return;}
+  document.getElementById('tFields').innerHTML=(t.note?`<div class="tt-note">${esc(t.note)}</div>`:'')+guideHtml(t)+'<div class="row2">'+(t.fields||[]).map(f=>{
+    const id='tf_'+f.key;
+    if(f.type==='bool')return `<div><label><input type="checkbox" id="${id}" ${f.default?'checked':''} style="width:auto;vertical-align:-2px"> ${esc(f.label)}</label></div>`;
+    if(f.type==='agent'){
+      const opts=AGENTS.map(a=>`<option value="${esc(a.agent_id)}">${esc(a.hostname||a.agent_id)}${a.ip?' — '+esc(a.ip):''}${a.os?' ('+esc(a.os)+')':''}</option>`).join('');
+      return `<div><label>${esc(f.label)}${f.required?' *':''}</label><select id="${id}"><option value="">— choisir un agent enrôlé —</option>${opts}</select>${AGENTS.length?'':'<div class="muted" style="font-size:10.5px">Aucun agent enrôlé. Enrôle l\'agent certfleet sur le serveur cible.</div>'}</div>`;
+    }
+    if(f.type==='password')return `<div><label>${esc(f.label)}${f.required?' *':''}</label><input id="${id}" type="password" autocomplete="new-password" placeholder="${esc(f.placeholder||'')}"></div>`;
+    return `<div><label>${esc(f.label)}${f.required?' *':''}</label><input id="${id}" placeholder="${esc(f.placeholder||'')}" value="${esc(f.default||'')}"></div>`;
+  }).join('')+'</div>'
+  +(t.type==='aloha'?`<div style="margin-top:8px"><button type="button" class="btn btn-sm" onclick="alohaList()">🔎 Tester la connexion & lister les certificats ALOHA</button><div id="alohaCertsBox" class="muted" style="font-size:11px;margin-top:5px"></div></div>`:'');
+}
+// Teste la DPAPI ALOHA avec les identifiants saisis et liste les fichiers cert (pour renseigner cert_name)
+async function alohaList(){
+  const box=document.getElementById('alohaCertsBox'); if(box) box.textContent='⏳ Connexion à la Data Plane API…';
+  const gv=k=>{const el=document.getElementById('tf_'+k);return el?(el.type==='checkbox'?el.checked:el.value):'';};
+  try{
+    const r=await api('/aloha/list',{method:'POST',body:{base_url:(gv('base_url')||'').trim(),username:(gv('username')||'').trim(),password:gv('password'),insecure:gv('insecure')}});
+    if(!box)return;
+    if(!r.certs||!r.certs.length){ box.innerHTML='✅ Connexion OK, mais aucun certificat listé dans le storage.'; return; }
+    box.innerHTML='✅ Connexion OK. Certificats disponibles (clique pour renseigner « cert_name ») :<br>'+r.certs.map(c=>`<a href="#" onclick="event.preventDefault();document.getElementById('tf_cert_name').value='${esc(c)}';">${esc(c)}</a>`).join(' · ');
+  }catch(e){ if(box) box.innerHTML='❌ '+esc(e.message); }
+}
+// Édition d'une cible existante : on réutilise le formulaire d'ajout (les champs
+// sont rendus dynamiquement depuis /target-types) et on bascule sur PUT /targets/:id.
+let editingTargetId = null;
+function editTarget(tid){
+  const t = (detData.targets || []).find(x => x.id === tid);
+  if (!t) { toast('Cible introuvable', 'err'); return; }
+  editingTargetId = tid;
+  document.getElementById('tType').value = t.type;
+  renderTargetFields();
+  document.getElementById('tName').value = t.name || '';
+  document.getElementById('tOrder').value = t.deploy_order || 0;
+  const p = t.params || {};
+  const def = TYPES.find(x => x.type === t.type) || {};
+  (def.fields || []).forEach(f => {
+    const el = document.getElementById('tf_' + f.key);
+    if (!el) return;
+    if (f.key === 'agent_id') { el.value = t.agent_id || ''; return; }
+    // Le mot de passe n'est jamais renvoyé par l'API (chiffré au coffre) : on le laisse
+    // vide, et le backend conserve l'existant si on n'en fournit pas de nouveau.
+    if (f.type === 'password') { el.value = ''; return; }
+    if (f.type === 'bool') { el.checked = !!p[f.key]; return; }
+    el.value = p[f.key] != null ? p[f.key] : '';
+  });
+  const btn = document.getElementById('tSubmitBtn'), cancel = document.getElementById('tCancelBtn'), hint = document.getElementById('tEditHint');
+  if (btn) btn.textContent = 'Enregistrer les modifications';
+  if (cancel) cancel.style.display = '';
+  if (hint) hint.textContent = 'Modification de la cible #' + tid + ((def.fields || []).some(f => f.type === 'password') ? ' — laisse le mot de passe vide pour conserver l\'actuel.' : '');
+  document.getElementById('tFields')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function cancelEditTarget(){
+  editingTargetId = null;
+  const btn = document.getElementById('tSubmitBtn'), cancel = document.getElementById('tCancelBtn'), hint = document.getElementById('tEditHint');
+  if (btn) btn.textContent = 'Ajouter la cible';
+  if (cancel) cancel.style.display = 'none';
+  if (hint) hint.textContent = '';
+  document.getElementById('tName').value = '';
+  document.getElementById('tOrder').value = 0;
+  renderTargetFields();
+}
+async function addTarget(){
+  const t=TYPES.find(x=>x.type===document.getElementById('tType').value);
+  const params={};let agent_id=null;
+  (t.fields||[]).forEach(f=>{const el=document.getElementById('tf_'+f.key);if(!el)return;const v=f.type==='bool'?el.checked:(f.type==='password'?el.value:el.value.trim());if(f.key==='agent_id')agent_id=v;else params[f.key]=v;});
+  const body={type:t.type,name:document.getElementById('tName').value.trim(),deploy_order:parseInt(document.getElementById('tOrder').value,10)||0,agent_id,params};
+  try{
+    if(editingTargetId){
+      // Un mot de passe laissé vide n'est pas transmis : le backend garde le password_enc existant.
+      Object.keys(body.params).forEach(k=>{ if(body.params[k]==='') delete body.params[k]; });
+      await api('/targets/'+editingTargetId,{method:'PUT',body});
+      toast('Cible mise à jour','ok');
+      cancelEditTarget();
+    } else {
+      await api('/'+detId+'/targets',{method:'POST',body});
+      toast('Cible ajoutée','ok');
+    }
+    detData=await api('/'+detId);renderDetail();await loadAll();
+  }catch(e){toast('Erreur : '+e.message,'err');}
+}
+async function delTarget(tid){if(!confirm('Supprimer cette cible ?'))return;try{await api('/targets/'+tid,{method:'DELETE'});detData=await api('/'+detId);renderDetail();await loadAll();}catch(e){toast('Erreur : '+e.message,'err');}}
+async function deployTarget(tid,btn){
+  const o=btn.textContent; btn.disabled=true; btn.textContent='⏳';
+  try{
+    const r=await api('/targets/'+tid+'/deploy',{method:'POST',body:{}});
+    toast('Commande de déploiement envoyée à '+(r.agent_id||'l\'agent')+' — l\'agent l\'exécutera à son prochain passage','ok');
+    detData=await api('/'+detId); renderDetail();
+    // rafraîchit le statut quelques fois (l'agent poll sur son timer)
+    let n=0; const iv=setInterval(async()=>{ n++; try{ detData=await api('/'+detId); renderDetail(); }catch{} if(n>=20) clearInterval(iv); }, 15000);
+  }catch(e){ toast('Erreur : '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.textContent=o; }
+}
+
+async function toggleAuto(enabled,btn){
+  if(btn){btn.disabled=true;}
+  try{
+    await api('/'+detId+'/auto-renew',{method:'POST',body:{enabled:!!enabled}});
+    toast(enabled?'Renouvellement automatique activé ✅ (le cron ré-émettra + redéploiera au seuil)':'Renouvellement automatique désactivé','ok');
+    detData=await api('/'+detId); renderDetail(); await loadAll();
+  }catch(e){ toast('Erreur : '+e.message,'err'); if(btn)btn.disabled=false; }
+}
+async function dl(what){
+  try{
+    const r=await fetch(API+BASE+'/'+detId+'/download?what='+encodeURIComponent(what),{headers:{'Authorization':'Bearer '+CERTFLEET_AUTH.getToken()}});
+    if(!r.ok){ let m='HTTP '+r.status; try{m=(await r.json()).error||m;}catch{} throw new Error(m); }
+    const blob=await r.blob();
+    const cd=r.headers.get('Content-Disposition')||''; const fn=(cd.match(/filename="([^"]+)"/)||[])[1]||('certificat-'+what+'.pem');
+    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast('Téléchargé : '+fn,'ok');
+  }catch(e){ toast('Téléchargement : '+e.message,'err'); }
+}
+async function certIssue(btn){
+  const env=document.getElementById('issueEnv').value;
+  if(env==='production' && !confirm('Émettre un certificat PRODUCTION (Let\'s Encrypt) pour :\n'+((detData.domains||[]).map(d=>d.domain||d).join(', ')||detData.common_name)+'\n\nValidation DNS-01 via Gandi. Continuer ?')) return;
+  const o=btn.textContent; btn.disabled=true; btn.textContent='⏳ Émission…';
+  const st=document.getElementById('issueStatus'); if(st)st.textContent='démarrage…';
+  try{
+    await api('/'+detId+'/issue',{method:'POST',body:{environment:env}});
+    if(st)st.textContent='⏳ émission en cours ('+env+')…';
+    await pollIssue();
+  }catch(e){ if(st)st.textContent='Erreur : '+e.message; toast('Erreur : '+e.message,'err'); btn.disabled=false; btn.textContent=o; }
+}
+async function pollIssue(){
+  for(let i=0;i<150;i++){
+    await new Promise(r=>setTimeout(r,4000));
+    let d; try{ d=await api('/'+detId); }catch{ continue; }
+    detData=d;
+    const st=document.getElementById('issueStatus'), lg=document.getElementById('issueLog');
+    if(lg&&d.issue_log){ lg.style.display=''; lg.textContent=d.issue_log; lg.scrollTop=lg.scrollHeight; }
+    if(d.issue_status==='running'){ if(st)st.textContent='⏳ en cours… ('+(i*4)+'s)'; continue; }
+    if(d.issue_status==='success'){ toast('Certificat émis ✅','ok'); renderDetail(); await loadAll(); return; }
+    if(d.issue_status==='error'){ toast('Émission échouée','err'); renderDetail(); return; }
+  }
+  const st=document.getElementById('issueStatus'); if(st)st.textContent='⏳ toujours en cours (voir plus tard)';
+}
+
+// ── Sonde ad-hoc ──
+function openProbe(){document.getElementById('pResult').innerHTML='';document.getElementById('probeModal').classList.add('open');}
+async function runProbe(btn){
+  const host=document.getElementById('pHost').value.trim();if(!host){toast('Hôte requis','err');return;}
+  const port=document.getElementById('pPort').value||443,sni=document.getElementById('pSni').value.trim();
+  const o=btn.innerHTML;btn.innerHTML='<span class="spin"></span> Sonde…';btn.disabled=true;
+  const res=document.getElementById('pResult');
+  try{
+    const r=await api('/probe?host='+encodeURIComponent(host)+'&port='+encodeURIComponent(port)+(sni?'&sni='+encodeURIComponent(sni):''));
+    if(!r.ok){res.innerHTML=`<div class="badge b-unreach">🔌 Injoignable</div><div class="muted" style="margin-top:6px">${esc(r.error||'')}</div>`;}
+    else{
+      const days=r.not_after?Math.floor((new Date(r.not_after)-Date.now())/86400000):null;
+      res.innerHTML=`
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${r.authorized?'<span class="badge b-ok">chaîne validée</span>':'<span class="badge b-warn">chaîne non validée</span>'}<span class="badge b-blue">${esc(r.protocol||'')}</span>${days!=null?`<span class="badge ${days<0?'b-exp':days<=21?'b-warn':'b-ok'}">${days<0?'expiré':days+' j'}</span>`:''}</div>
+        <table style="margin-top:10px"><tbody>
+          <tr><th>Sujet (CN)</th><td class="mono">${esc(r.subject_cn||'—')}</td></tr>
+          <tr><th>Émetteur</th><td class="mono">${esc(r.issuer_cn||r.issuer_o||'—')}</td></tr>
+          <tr><th>Valide</th><td>${fmtDate(r.not_before)} → <b>${fmtDate(r.not_after)}</b></td></tr>
+          <tr><th>SAN</th><td class="mono">${esc((r.sans||[]).join(', '))||'—'}</td></tr>
+          <tr><th>SHA-256</th><td class="mono" style="word-break:break-all">${esc(r.fingerprint_sha256||'—')}</td></tr>
+        </tbody></table>`;
+    }
+  }catch(e){res.innerHTML=`<div class="muted">Erreur : ${esc(e.message)}</div>`;}
+  finally{btn.innerHTML=o;btn.disabled=false;}
+}
+
+// Fermer modale sur clic fond
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+
+// Verifie la session aupres du serveur, affiche l'identite, puis masque les
+// actions d'ecriture pour un compte en lecture seule. Le serveur refuse de
+// toute facon ces appels : le masquage evite seulement de proposer un bouton
+// qui repondrait 403.
+(async () => {
+  const me = await CERTFLEET_AUTH.guard();
+  if (!me) return;
+  CERTFLEET_AUTH.renderUserBar(document.getElementById('userbar'), me);
+  if (!CERTFLEET_AUTH.can('operator')) {
+    document.body.classList.add('readonly');
+  }
+  await loadAll();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# Plateformes de financement affichées par le bouton « Sponsor » du dépôt.
+# Décommentez celles que vous avez réellement configurées.
+
+# GitHub Sponsors — en France, exige une entité (SIREN) côté Stripe.
+# github: [stephkoh]
+
+# Liberapay — association à but non lucratif, 0 % de commission,
+# ouverte aux particuliers sans structure juridique.
+liberapay: stephkoh
+
+# Ko-fi — dons ponctuels via PayPal, aucune société requise.
+# ko_fi: stephkoh

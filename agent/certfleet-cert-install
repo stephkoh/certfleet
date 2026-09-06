@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# ============================================================================
+# certfleet-cert-install — helper certfleet (exécuté en root via sudo NOPASSWD)
+# Installe un certificat + sa clé aux bons chemins avec les bonnes permissions,
+# puis recharge le service de façon CONTRAINTE (whitelist — pas d'exec arbitraire).
+# Appelé UNIQUEMENT par l'agent certfleet (kind=cert) :
+#   sudo /usr/local/bin/certfleet-cert-install <cert_path> <key_path> <src_cert> <src_key> [reload_cmd] [src_chain] [chain_path]
+# Les arguments 6 et 7 sont OPTIONNELS (chaine intermediaire separee, ex. Serv-U qui
+# ne lit que le PREMIER certificat du fichier .crt et prend la CA dans un reglage a part).
+# Un helper ancien ignore simplement ces arguments : la mise a jour reste compatible.
+# Sécurité : seul ce script est autorisé en NOPASSWD (cf /etc/sudoers.d/certfleet-agent).
+# ============================================================================
+set -u
+cert_path="${1:-}"; key_path="${2:-}"; src_cert="${3:-}"; src_key="${4:-}"; reload_cmd="${5:-}"
+src_chain="${6:-}"; chain_path="${7:-}"
+
+die(){ echo "certfleet-cert-install: $1" >&2; exit 1; }
+
+# --- Validation des chemins de destination : absolus, sans traversal ---
+for p in "$cert_path" "$key_path"; do
+  [ -n "$p" ] || die "chemin de destination vide"
+  case "$p" in /*) ;; *) die "chemin non absolu: $p";; esac
+  case "$p" in *..*) die "chemin invalide (..): $p";; esac
+done
+# --- Validation des sources (fournies par l'agent dans un tmp) ---
+[ -f "$src_cert" ] || die "source cert introuvable: $src_cert"
+[ -f "$src_key" ]  || die "source clé introuvable: $src_key"
+grep -q "BEGIN CERTIFICATE" "$src_cert" || die "contenu cert source invalide"
+grep -q "PRIVATE KEY"       "$src_key"  || die "contenu clé source invalide"
+
+# --- Installation atomique + permissions strictes ---
+umask 077
+# NE JAMAIS re-chmod un répertoire EXISTANT : cert_path/key_path pointent souvent
+# vers un dossier système partagé (ex. /etc/ssl/certs -> /etc/pki/tls/certs) qui
+# contient le CA système (ca-bundle.crt). Le forcer en 0750 casse l'accès TLS de
+# TOUT process non-root (dont l'agent lui-même : curl error 77). On crée le dossier
+# UNIQUEMENT s'il manque, sans toucher aux perms d'un dossier déjà là.
+cert_dir="$(dirname "$cert_path")"; key_dir="$(dirname "$key_path")"
+[ -d "$cert_dir" ] || install -d -m 0755 "$cert_dir" 2>/dev/null || true
+[ -d "$key_dir" ]  || install -d -m 0750 "$key_dir"  2>/dev/null || true
+cp -f "$src_cert" "${cert_path}.tmp.$$" && mv -f "${cert_path}.tmp.$$" "$cert_path" || die "écriture cert KO ($cert_path)"
+cp -f "$src_key"  "${key_path}.tmp.$$"  && mv -f "${key_path}.tmp.$$"  "$key_path"  || die "écriture clé KO ($key_path)"
+chmod 0644 "$cert_path"; chmod 0600 "$key_path"
+chown root:root "$cert_path" "$key_path" 2>/dev/null || true
+
+# --- Chaine intermediaire separee (optionnelle) ---
+if [ -n "$chain_path" ] && [ -n "$src_chain" ] && [ -f "$src_chain" ]; then
+  case "$chain_path" in /*) ;; *) die "chemin chaine non absolu: $chain_path";; esac
+  case "$chain_path" in *..*) die "chemin chaine invalide (..): $chain_path";; esac
+  grep -q "BEGIN CERTIFICATE" "$src_chain" || die "contenu chaine source invalide"
+  chain_dir="$(dirname "$chain_path")"
+  [ -d "$chain_dir" ] || install -d -m 0755 "$chain_dir" 2>/dev/null || true
+  cp -f "$src_chain" "${chain_path}.tmp.$$" && mv -f "${chain_path}.tmp.$$" "$chain_path" || die "ecriture chaine KO ($chain_path)"
+  chmod 0644 "$chain_path"; chown root:root "$chain_path" 2>/dev/null || true
+fi
+echo "installé: $cert_path (0644) + $key_path (0600)"
+
+# --- Reload CONTRAINT (whitelist stricte, aucun exec root arbitraire) ---
+[ -z "$reload_cmd" ] && exit 0
+svc_re='^[A-Za-z0-9@._-]+$'
+# shellcheck disable=SC2086
+set -- $reload_cmd
+case "${1:-} ${2:-}" in
+  "systemctl reload"|"systemctl restart")
+    svc="${3:-}"
+    [[ "$svc" =~ $svc_re ]] || die "nom de service invalide: ${svc}"
+    systemctl "$2" "$svc" && echo "reload: systemctl $2 $svc OK" || die "reload KO: systemctl $2 $svc"
+    ;;
+  "nginx -s")
+    [ "${3:-}" = "reload" ] || die "nginx: seule 'nginx -s reload' est autorisée"
+    nginx -s reload && echo "reload: nginx -s reload OK" || die "nginx reload KO"
+    ;;
+  "apachectl graceful"|"apachectl -k")
+    apachectl graceful && echo "reload: apachectl graceful OK" || die "apachectl graceful KO"
+    ;;
+  "caddy reload")
+    caddy reload && echo "reload: caddy reload OK" || die "caddy reload KO"
+    ;;
+  *)
+    die "reload non autorisé (whitelist: systemctl reload|restart <svc> | nginx -s reload | apachectl graceful | caddy reload) : $reload_cmd"
+    ;;
+esac
+exit 0
