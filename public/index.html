@@ -21,6 +21,10 @@ html,body{font-family:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,sans-ser
 .btn-primary{background:var(--cm-blue);border-color:var(--cm-blue);color:#fff}
 .btn-primary:hover{background:var(--cm-blue2)}
 .btn-sm{padding:4px 9px;font-size:12px}
+.codebox{display:flex;gap:8px;align-items:flex-start;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:11px 13px}
+.codebox code{flex:1;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.6;word-break:break-all;white-space:pre-wrap}
+.codebox .btn{background:#1e293b;color:#e2e8f0;border-color:#334155;flex:none}
+.codebox .btn:hover{background:#334155}
 body.readonly .actions .btn-primary,body.readonly .wr{display:none}
 .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(3,1fr)}}
@@ -118,6 +122,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--cm-blue)
     <button class="tab" data-pane="mon" onclick="switchTab('mon')">📡 Monitoring</button>
     <button class="tab" data-pane="deploy" onclick="switchTab('deploy')">🚀 Déploiements</button>
     <button class="tab" data-pane="types" onclick="switchTab('types')">⚙️ Types de cible</button>
+    <button class="tab" data-pane="agents" onclick="switchTab('agents')">🖥️ Agents</button>
     <button class="tab" data-pane="secu" onclick="switchTab('secu')">🔒 Sécurité</button>
   </div>
 
@@ -165,28 +170,85 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--cm-blue)
 
   <div class="pane" id="pane-types">
     <div class="card" style="border-left:4px solid var(--cm-blue)">
-      <h3>🔧 Prérequis « cible agent » — à faire UNE fois par serveur Linux</h3>
-      <div class="tt-note" style="background:#dcfce7;color:#166534;border:1px solid #86efac;margin-bottom:10px">✅ <b>En principe vous n'avez rien à faire ici.</b> Le script d'enrôlement de l'agent installe déjà le helper et sa règle <span class="mono">sudoers</span> — c'est la ligne <span class="mono">[install] helper certfleet installé</span> dans son journal. La procédure manuelle ci-dessous ne sert qu'au dépannage, si l'agent est en place mais que le helper manque.</div>
-      <div class="muted" style="margin-bottom:8px">Pour déployer réellement (écrire dans <span class="mono">/etc</span> + recharger le service), le serveur doit avoir : l'<b>agent certfleet natif</b> enrôlé (IT › ADM) + le <b>helper root</b> + la <b>règle sudoers</b>.</div>
-      <div class="tt-note" style="background:#fef9c3;color:#854d0e;border:1px solid #fde047;margin-bottom:10px">🔑 <b>Certificat ≠ mode sudo.</b> Le helper cert est <b>TOUJOURS en NOPASSWD</b>, même si l'agent a été installé en mode sécurisé (<span class="mono">SUDO_SECURE=1</span>). Donc le <b>déploiement / renouvellement de certificat est 100 % non-interactif</b> : jamais de mot de passe demandé. Le mot de passe sudo (mode sécurisé) ne concerne QUE les <b>mises à jour CVE</b> (dnf/systemctl), pas les certs. Le reload du service est fait <b>par le helper lui-même, en root</b> (whitelist interne).</div>
-      <div style="margin-bottom:6px"><b>Option A (normal — automatique)</b> — la commande d'enrôlement affichée dans <b>IT › ADM</b> : <span class="mono">…/api/adm/install.sh | sudo … bash</span> pose l'agent + le helper + le sudoers <b>d'un coup</b>. C'est tout.</div>
-      <div><b>Option B (dépannage manuel — SEULEMENT si le helper manque)</b>, en root sur le serveur — 3 étapes :</div>
+      <h3>🔧 Prérequis d'une cible « agent »</h3>
+      <div class="tt-note" style="background:#dcfce7;color:#166534;border:1px solid #86efac;margin-bottom:10px">✅ <b>En principe vous n'avez rien à faire ici.</b> L'installateur proposé dans l'onglet <b>Agents</b> pose l'agent, le helper root et sa règle <span class="mono">sudoers</span> en une seule commande. La procédure manuelle ci-dessous ne sert qu'au dépannage, si l'agent est en place mais que le helper manque.</div>
+
+      <div class="muted" style="margin-bottom:8px">Pour déployer réellement — écrire dans <span class="mono">/etc</span> et recharger le service — le serveur cible doit avoir l'<b>agent certfleet</b> enrôlé, le <b>helper root</b> et sa <b>règle sudoers</b>.</div>
+
+      <div class="tt-note" style="background:#fef9c3;color:#854d0e;border:1px solid #fde047;margin-bottom:10px">🔑 <b>Le déploiement est toujours non interactif.</b> Le helper s'exécute en <span class="mono">NOPASSWD</span> : aucun mot de passe n'est jamais demandé pendant un renouvellement, y compris la nuit. C'est le helper lui-même qui recharge le service, en root, sur une <b>liste blanche interne</b> de commandes — pas le sudoers. L'agent, lui, ne peut rien exécuter d'autre.</div>
+
+      <div style="margin-bottom:6px"><b>Voie normale</b> — copiez la commande d'installation depuis l'onglet <b>Agents</b> : elle télécharge l'agent et le helper, pose le sudoers, enrôle la machine et crée la minuterie, d'un seul coup.</div>
+
+      <div style="margin-top:10px"><b>Dépannage manuel</b>, en root sur le serveur, uniquement si le helper manque :</div>
+
       <div style="margin:6px 0 2px"><b>1.</b> Installer le helper root :</div>
-      <pre style="background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;white-space:pre-wrap">curl -fsSL https://certfleet.example.com/api/adm/cert-install.sh -o /usr/local/bin/certfleet-cert-install
+      <pre style="background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;white-space:pre-wrap">curl -fsSL <span id="hubOrigin">https://votre-hub</span>/api/agents/cert-install.sh -o /usr/local/bin/certfleet-cert-install
 chmod 0755 /usr/local/bin/certfleet-cert-install
 chown root:root /usr/local/bin/certfleet-cert-install</pre>
-      <div style="margin:8px 0 2px"><b>2.</b> Créer le fichier <span class="mono">/etc/sudoers.d/certfleet-cert-install</span> avec <b>EXACTEMENT cette ligne</b> (et rien d'autre) :</div>
-      <pre style="background:#0f172a;color:#4ade80;padding:10px;border-radius:6px;font-size:12px;overflow:auto;white-space:pre-wrap;border:1px solid #4ade80">srv_certfleet-agent ALL=(root) NOPASSWD: /usr/local/bin/certfleet-cert-install</pre>
-      <div class="muted" style="font-size:11px">↳ remplace <span class="mono">srv_certfleet-agent</span> par le compte de service de ton agent s'il est différent (par défaut c'est bien <span class="mono">srv_certfleet-agent</span>). Décomposé : <span class="mono">srv_certfleet-agent</span> = qui · <span class="mono">ALL=(root)</span> = peut lancer en tant que root · <span class="mono">NOPASSWD:</span> = sans mot de passe · <span class="mono">/usr/local/bin/certfleet-cert-install</span> = uniquement CE script.</div>
-      <div style="margin:8px 0 2px"><b>3.</b> Permissions + validation de la syntaxe (obligatoire, sinon sudo peut casser) :</div>
+
+      <div style="margin:8px 0 2px"><b>2.</b> Si — et seulement si — l'agent tourne sous un compte de service et non en root, créer <span class="mono">/etc/sudoers.d/certfleet-cert-install</span> avec cette seule ligne :</div>
+      <pre style="background:#0f172a;color:#4ade80;padding:10px;border-radius:6px;font-size:12px;overflow:auto;white-space:pre-wrap;border:1px solid #4ade80">certfleet ALL=(root) NOPASSWD: /usr/local/bin/certfleet-cert-install</pre>
+      <div class="muted" style="font-size:11px">↳ remplacez <span class="mono">certfleet</span> par le compte qui exécute l'agent. Décomposé : <span class="mono">certfleet</span> = qui · <span class="mono">ALL=(root)</span> = peut lancer en tant que root · <span class="mono">NOPASSWD:</span> = sans mot de passe · le chemin = <b>uniquement ce script</b>, rien d'autre.
+      <br>L'installateur ne pose <b>pas</b> cette règle : il fait tourner l'agent en root via systemd, où <span class="mono">sudo</span> est sans effet. Une règle ouverte à tous les comptes locaux serait un privilège inutile.</div>
+
+      <div style="margin:8px 0 2px"><b>3.</b> Permissions et validation de la syntaxe — obligatoire, une erreur ici peut casser <span class="mono">sudo</span> pour tout le monde :</div>
       <pre style="background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;white-space:pre-wrap">chmod 0440 /etc/sudoers.d/certfleet-cert-install
-visudo -cf /etc/sudoers.d/certfleet-cert-install    # doit répondre: … parsed OK</pre>
-      <div class="muted" style="margin-top:8px"><b>Ce que le helper autorise à recharger</b> (whitelist interne, PAS dans le sudoers) : <span class="mono">systemctl reload|restart &lt;svc&gt;</span> · <span class="mono">nginx -s reload</span> · <span class="mono">apachectl graceful</span> · <span class="mono">caddy reload</span>. Sans le helper → écriture directe seulement (bac-à-sable), pas de reload.</div>
+visudo -cf /etc/sudoers.d/certfleet-cert-install    # doit répondre : … parsed OK</pre>
+
+      <div class="muted" style="margin-top:8px"><b>Ce que le helper accepte de recharger</b> — liste blanche interne au helper, pas dans le sudoers : <span class="mono">systemctl reload|restart &lt;service&gt;</span> · <span class="mono">nginx -s reload</span> · <span class="mono">apachectl graceful</span> · <span class="mono">caddy reload</span>. Sans le helper, l'agent écrit toujours le certificat mais ne peut ni toucher à <span class="mono">/etc</span> ni recharger le service — il le signale explicitement dans son compte rendu.</div>
     </div>
     <div class="card">
       <h3>⚙️ Types de cible supportés</h3>
       <div class="muted" style="margin-bottom:12px">Chaque certificat peut avoir N cibles de déploiement ordonnées. Les paramètres se règlent par cible dans le détail d'un certificat (bouton « ⚙️ Cibles »). Voici le catalogue des types disponibles et leurs paramètres.</div>
       <div class="tt-grid" id="ttGrid"></div>
+    </div>
+  </div>
+
+  <div class="pane" id="pane-agents">
+
+    <div class="card">
+      <h3>📥 Installer un agent</h3>
+      <div class="muted" style="margin-bottom:12px;line-height:1.6">
+        L'agent tourne sur le serveur à équiper et vient chercher ses certificats auprès de ce hub.
+        Il n'ouvre <b>aucun port en entrée</b> : la communication est sortante uniquement.
+        La clé privée du certificat lui parvient chiffrée avec une clé publique qu'il a générée
+        lui-même — ce hub ne peut pas la déchiffrer.
+      </div>
+
+      <div id="enrollBox"></div>
+
+      <div class="tabs" style="margin-top:16px;margin-bottom:12px">
+        <button class="tab active" data-os="linux" onclick="switchOs('linux')">🐧 Linux</button>
+        <button class="tab" data-os="windows" onclick="switchOs('windows')">🪟 Windows</button>
+      </div>
+
+      <div id="os-linux">
+        <div class="muted" style="margin-bottom:6px">À exécuter <b>en root</b> sur le serveur cible. Requiert curl, openssl et python3.</div>
+        <div class="codebox"><code id="cmdLinux">—</code><button class="btn btn-sm" onclick="copyCmd('cmdLinux',this)">Copier</button></div>
+        <div class="muted" style="font-size:10.5px;margin-top:6px">
+          Le script installe l'agent et son helper root, pose la règle sudoers, enrôle la machine,
+          active une minuterie systemd toutes les 5 minutes, puis efface le jeton d'enrôlement du disque.
+        </div>
+      </div>
+
+      <div id="os-windows" hidden>
+        <div class="muted" style="margin-bottom:6px">À exécuter dans <b>PowerShell 7 en administrateur</b>. PowerShell 5.1 ne suffit pas.</div>
+        <div class="codebox"><code id="cmdWindows">—</code><button class="btn btn-sm" onclick="copyCmd('cmdWindows',this)">Copier</button></div>
+        <div class="muted" style="font-size:10.5px;margin-top:6px">
+          Le script installe l'agent, enrôle la machine et crée une tâche planifiée exécutée par SYSTEM
+          toutes les 5 minutes. Il gère le magasin de certificats Windows, les liaisons IIS,
+          les services Exchange et la passerelle RDS.
+          <br>PowerShell 7 s'installe par <span class="mono">winget install Microsoft.PowerShell</span>.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+        <h3 style="margin:0">🖥️ Agents enrôlés</h3>
+        <button class="btn btn-sm" onclick="loadAll()">🔄 Rafraîchir</button>
+      </div>
+      <div id="agentsTable"><div class="empty">Chargement…</div></div>
     </div>
   </div>
 
@@ -266,7 +328,7 @@ visudo -cf /etc/sudoers.d/certfleet-cert-install    # doit répondre: … parsed
       <div><label>Propriétaire<span class="hi" title="Équipe ou personne responsable de ce certificat (facultatif).">ⓘ</span></label><input id="cOwner" placeholder="Infra"></div>
       <div><label>Source<span class="hi" title="ACME = émis et renouvelé par certfleet (Let's Encrypt + Gandi). Monitoring = seulement surveillé (pas d'émission). Importé = certificat obtenu ailleurs, collé à la main.">ⓘ</span></label><select id="cSource"><option value="monitor">Monitoring</option><option value="acme">ACME</option><option value="imported">Importé</option></select></div>
     </div>
-    <h3 style="margin-top:16px">Politique de renouvellement <span class="muted" style="font-weight:400">(appliquée aux lots suivants)</span></h3>
+    <h3 style="margin-top:16px">Politique de renouvellement</h3>
     <div class="row3">
       <div><label>CA<span class="hi" title="Autorité qui émet le certificat. Let's Encrypt = gratuit, validation de domaine (DV), recommandé. ZeroSSL/GTS = alternatives ACME. Gandi (OV/EV) = payant, validation d'organisation (rare).">ⓘ</span></label><select id="cPolicyCa"><option value="">—</option><option value="letsencrypt">Let's Encrypt</option><option value="zerossl">ZeroSSL</option><option value="gts">Google Trust Services</option><option value="gandi_ov">Gandi (OV/EV)</option></select></div>
       <div><label>Challenge<span class="hi" title="Méthode de preuve de contrôle du domaine. DNS-01 = enregistrement TXT (OBLIGATOIRE pour un wildcard). HTTP-01 = fichier servi sur le port 80 (impossible pour un wildcard).">ⓘ</span></label><select id="cChallenge"><option value="dns-01">DNS-01</option><option value="http-01">HTTP-01</option></select></div>
@@ -345,7 +407,7 @@ function guideHtml(t){
     ${g.gotcha?`<div class="tt-note" style="margin:0">⚠️ ${esc(g.gotcha)}</div>`:''}
     ${t.mode==='agent'?`<div style="margin-top:8px"><b>🖥️ Commandes serveur (en root) — helper + sudoers</b> :
       <pre style="background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;white-space:pre-wrap;margin-top:4px"># 1) installer le helper root
-curl -fsSL https://certfleet.example.com/api/adm/cert-install.sh -o /usr/local/bin/certfleet-cert-install
+curl -fsSL https://votre-hub/api/agents/cert-install.sh -o /usr/local/bin/certfleet-cert-install
 chmod 0755 /usr/local/bin/certfleet-cert-install
 chown root:root /usr/local/bin/certfleet-cert-install
 
@@ -355,7 +417,7 @@ srv_certfleet-agent ALL=(root) NOPASSWD: /usr/local/bin/certfleet-cert-install
 # 3) permissions + validation
 chmod 0440 /etc/sudoers.d/certfleet-cert-install
 visudo -cf /etc/sudoers.d/certfleet-cert-install</pre>
-      <div class="muted" style="font-size:10.5px">💡 Plus simple : (ré)exécute la commande d'enrôlement de <b>IT › ADM</b> — <span class="mono">install.sh</span> pose le helper + le sudoers automatiquement. Remplace <span class="mono">srv_certfleet-agent</span> par le compte de service de ton agent s'il diffère.</div></div>`:''}
+      <div class="muted" style="font-size:10.5px">💡 Plus simple : relancez l'installateur depuis l'onglet <b>Agents</b> — <span class="mono">install.sh</span> pose le helper + le sudoers automatiquement. Remplace <span class="mono">srv_certfleet-agent</span> par le compte de service de ton agent s'il diffère.</div></div>`:''}
   </div>`;
 }
 function barColor(days){if(days==null)return '#cbd5e1';if(days<0)return 'var(--cm-red)';if(days<=7)return '#ea580c';if(days<=21)return 'var(--cm-amber)';if(days<=45)return '#65a30d';return 'var(--cm-green)';}
@@ -367,6 +429,7 @@ async function loadAll(){
     ]);
     OVERVIEW=ov;CERTS=certs;ENDPOINTS=eps;TYPES=types;AGENTS=agents||[];DEPLOYS=deploys||[];
     renderKpis();renderTimeline();renderCerts();renderEndpoints();renderTypes();renderDeployOverview();fillSelectors();
+    loadAgents();
   }catch(e){toast('Erreur chargement : '+e.message,'err');}
 }
 
@@ -468,7 +531,7 @@ function renderTypes(){
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:6px 0;cursor:pointer"><input type="checkbox" ${t.status?.tested?'checked':''} onclick="toggleTypeTested('${t.type}',this.checked,this)"> Marquer ce type comme <b>testé</b> (visible par l'équipe)</label>
       ${t.note?`<div class="tt-note">${esc(t.note)}</div>`:''}
       ${t.mode==='agent'?`<div class="tt-note" style="color:#1e40af;background:#e0edff">🔧 Cible <b>agent</b> — nécessite l'agent natif + helper + sudoers (voir « <b>Prérequis cible agent</b> » en haut de cet onglet).</div>`:''}
-      ${t.mode==='api'?`<div class="tt-note" style="color:#92400e;background:#fffbeb">🔌 <b>Connecteur API (push)</b> — aucun agent requis, certfleet pousse via l'API de l'appliance. Lot suivant.</div>`:''}
+      ${t.mode==='api'?`<div class="tt-note" style="color:#92400e;background:#fffbeb">🔌 <b>Connecteur API</b> — aucun agent à installer : certfleet appelle directement l'API de l'appliance. ${t.type==='aloha'?'Implémenté.':'⚠️ Non implémenté à ce jour : le déploiement échouera.'}</div>`:''}
       ${t.mode==='k8s'?`<div class="tt-note" style="color:#6d28d9;background:#f3e8ff">☸️ <b>Monitoring seul</b> — cert-manager reste maître de l'émission ; certfleet supervise.</div>`:''}
       <div style="margin-top:6px">${(t.fields||[]).map(f=>`<div class="tt-field">• <b>${esc(f.label)}</b> <span class="muted">(${f.type}${f.required?', requis':''})</span></div>`).join('')}</div>
       ${guideHtml(t)}
@@ -867,6 +930,167 @@ async function runProbe(btn){
     }
   }catch(e){res.innerHTML=`<div class="muted">Erreur : ${esc(e.message)}</div>`;}
   finally{btn.innerHTML=o;btn.disabled=false;}
+}
+
+
+// ══════════════════ Agents ══════════════════
+// L'API des agents vit sous /api/agents et non sous /api/certificates : elle a
+// son propre préfixe, d'où cet appel séparé de api().
+async function agentApi(path, opts){
+  opts = opts || {};
+  opts.headers = CERTFLEET_AUTH.headers(opts.headers);
+  if (opts.body && typeof opts.body === 'object') {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  const r = await fetch('/api/agents' + path, opts);
+  if (!r.ok) {
+    let m = 'HTTP ' + r.status;
+    try { const d = await r.json(); if (d.error) m = d.error; } catch(_){}
+    throw new Error(m);
+  }
+  return r.json();
+}
+
+let ENROLL_TOKEN = null;
+
+function switchOs(os){
+  document.querySelectorAll('[data-os]').forEach(t => t.classList.toggle('active', t.dataset.os === os));
+  document.getElementById('os-linux').hidden = os !== 'linux';
+  document.getElementById('os-windows').hidden = os !== 'windows';
+}
+
+async function copyCmd(id, btn){
+  const txt = document.getElementById(id).textContent;
+  try { await navigator.clipboard.writeText(txt); }
+  catch(_) {
+    // Le presse-papiers est refusé hors HTTPS : on retombe sur une sélection.
+    const r = document.createRange(); r.selectNode(document.getElementById(id));
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    toast('Copie refusée par le navigateur — texte sélectionné', 'err');
+    return;
+  }
+  const o = btn.textContent; btn.textContent = 'Copié';
+  setTimeout(() => { btn.textContent = o; }, 1600);
+}
+
+function renderEnrollBox(){
+  const box = document.getElementById('enrollBox');
+  if (!box) return;
+
+  if (!CERTFLEET_AUTH.can('admin')) {
+    box.innerHTML = '<div class="tt-note">La commande d\'installation porte le jeton d\'enrôlement : '
+      + 'seul un administrateur peut l\'afficher.</div>';
+    return;
+  }
+  if (!ENROLL_TOKEN) {
+    box.innerHTML = '<div class="tt-note" style="background:#fffbeb;border:1px solid #fde68a;color:#92400e">'
+      + '<b>Aucun jeton d\'enrôlement configuré.</b> Sans lui, aucun agent ne peut s\'enrôler, '
+      + 'et les cibles de type « agent » restent inutilisables.'
+      + '<div style="margin-top:9px"><button class="btn btn-sm btn-primary" onclick="rotateToken(this)">Générer le jeton</button></div></div>';
+    return;
+  }
+  box.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px">'
+    + '<span class="badge b-ok">Enrôlement actif</span>'
+    + '<span class="muted">Le jeton est inclus dans les commandes ci-dessous.</span>'
+    + '<button class="btn btn-sm" onclick="rotateToken(this)">Régénérer</button>'
+    + '<button class="btn btn-sm" onclick="disableToken(this)">Désactiver</button></div>'
+    + '<div class="muted" style="font-size:10.5px;margin-top:6px">'
+    + 'Régénérer n\'interrompt aucun agent déjà en place : chacun possède son propre jeton. '
+    + 'Cela empêche seulement de nouveaux enrôlements avec l\'ancien.</div>';
+}
+
+function renderInstallCommands(){
+  const base = location.origin;
+  const l = document.getElementById('cmdLinux');
+  const w = document.getElementById('cmdWindows');
+  if (!l || !w) return;
+
+  if (!ENROLL_TOKEN) {
+    l.textContent = 'Générez d\'abord le jeton d\'enrôlement ci-dessus.';
+    w.textContent = 'Générez d\'abord le jeton d\'enrôlement ci-dessus.';
+    return;
+  }
+  // Le jeton voyage en en-tête et jamais dans l'URL : une URL se retrouve dans
+  // les journaux du proxy et dans l'historique du shell.
+  l.textContent = 'curl -fsSL -H "Authorization: Bearer ' + ENROLL_TOKEN + '" \\\n'
+    + '  ' + base + '/api/agents/install.sh | sudo bash';
+  w.textContent = '$h=@{Authorization="Bearer ' + ENROLL_TOKEN + '"}\n'
+    + 'iwr -Uri "' + base + '/api/agents/install.ps1" -Headers $h -UseBasicParsing | select -Expand Content | iex';
+}
+
+async function loadAgents(){
+  if (CERTFLEET_AUTH.can('admin')) {
+    try { ENROLL_TOKEN = (await agentApi('/enroll-token')).token; } catch(_) { ENROLL_TOKEN = null; }
+  }
+  renderEnrollBox();
+  renderInstallCommands();
+  renderAgents();
+}
+
+async function rotateToken(btn){
+  btn.disabled = true;
+  try {
+    ENROLL_TOKEN = (await agentApi('/enroll-token/rotate', { method: 'POST' })).token;
+    renderEnrollBox(); renderInstallCommands();
+    toast('Jeton d\'enrôlement généré', 'ok');
+  } catch(e) { toast(e.message, 'err'); btn.disabled = false; }
+}
+
+async function disableToken(btn){
+  if (!confirm('Désactiver l\'enrôlement ?\n\nLes agents déjà en place continuent de fonctionner, '
+             + 'mais aucun nouveau serveur ne pourra s\'ajouter.')) return;
+  btn.disabled = true;
+  try {
+    await agentApi('/enroll-token', { method: 'DELETE' });
+    ENROLL_TOKEN = null;
+    renderEnrollBox(); renderInstallCommands();
+    toast('Enrôlement désactivé', 'ok');
+  } catch(e) { toast(e.message, 'err'); btn.disabled = false; }
+}
+
+function renderAgents(){
+  const box = document.getElementById('agentsTable');
+  if (!box) return;
+  const list = AGENTS || [];
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">Aucun agent enrôlé. Lancez la commande ci-dessus sur un serveur cible.</div>';
+    return;
+  }
+  const osIcon = pf => pf === 'windows' ? 'Windows' : pf === 'linux' ? 'Linux' : '?';
+  box.innerHTML = '<table><thead><tr><th>Serveur</th><th>Système</th><th>Adresse</th>'
+    + '<th>Version</th><th>Vu</th><th>État</th><th style="width:1%"></th></tr></thead><tbody>'
+    + list.map(a =>
+        '<tr>'
+        + '<td><span class="badge b-blue">' + osIcon(a.platform) + '</span> <b>' + esc(a.hostname || a.agent_id) + '</b>'
+          + (a.fqdn && a.fqdn !== a.hostname ? '<div class="muted" style="font-size:10.5px">' + esc(a.fqdn) + '</div>' : '')
+        + '</td>'
+        + '<td>' + esc(a.os || '—') + (a.os_version ? ' ' + esc(a.os_version) : '')
+          + (a.arch ? '<div class="muted" style="font-size:10.5px">' + esc(a.arch) + '</div>' : '') + '</td>'
+        + '<td class="mono">' + esc(a.ip || '—') + '</td>'
+        + '<td class="mono">' + esc(a.agent_version || '—') + '</td>'
+        + '<td class="muted">' + fmtDT(a.last_seen) + '</td>'
+        + '<td>' + (a.online ? '<span class="badge b-ok">En ligne</span>'
+                             : '<span class="badge b-unk">Silencieux</span>')
+          + (a.has_key === false ? ' <span class="badge b-exp">sans clé</span>' : '') + '</td>'
+        + '<td>' + (CERTFLEET_AUTH.can('admin')
+            ? '<button class="btn btn-sm" onclick="delAgent(' + JSON.stringify(JSON.stringify(a.agent_id)) + ')">Retirer</button>'
+            : '') + '</td></tr>').join('')
+    + '</tbody></table>'
+    + '<div class="muted" style="font-size:10.5px;margin-top:9px">'
+    + 'Un agent est dit silencieux s\'il ne s\'est pas manifesté depuis plus de 10 minutes. '
+    + 'Il interroge normalement le hub toutes les 5 minutes.</div>';
+}
+
+async function delAgent(json){
+  const id = JSON.parse(json);
+  if (!confirm('Retirer l\'agent « ' + id + ' » ?\n\nLes cibles qui s\'appuient sur lui ne pourront plus '
+             + 'être déployées tant qu\'il n\'est pas réenrôlé.')) return;
+  try {
+    await agentApi('/' + encodeURIComponent(id), { method: 'DELETE' });
+    toast('Agent retiré', 'ok');
+    await loadAll();
+  } catch(e) { toast(e.message, 'err'); }
 }
 
 // Fermer modale sur clic fond

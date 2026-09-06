@@ -13,7 +13,8 @@
     "avatar": "node assets/make-avatar.mjs",
     "test:smoke": "node test/smoke.mjs",
     "test:api": "bash test/api.sh",
-    "test": "npm run check && npm run test:smoke"
+    "test": "npm run check && npm run test:smoke && npm run audit",
+    "audit": "node tools/audit.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
