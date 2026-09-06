@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════
+# Variante poste de travail — Docker Desktop, kind, minikube, k3d.
+#
+#   docker build -t certfleet:local .
+#
+#   kubectl create namespace certfleet
+#   kubectl -n certfleet create secret generic certfleet \
+#     --from-literal=DATABASE_URL="postgres://certfleet:local@certfleet-db:5432/certfleet" \
+#     --from-literal=POSTGRES_PASSWORD="local" \
+#     --from-literal=ADMIN_TOKEN="$(openssl rand -hex 32)" \
+#     --from-literal=CERT_VAULT_KEY="$(openssl rand -base64 32)" \
+#     --from-literal=BOOTSTRAP_PASSWORD="MotDePasseLocal1234"
+#
+#   kubectl apply -k deploy/k8s/local
+#   kubectl -n certfleet port-forward svc/certfleet 8080:80
+#
+# Puis http://localhost:8080
+#
+# ── Pourquoi port-forward et pas le NodePort ─────────────────────────
+# Le NodePort 30080 ci-dessous sert à minikube, k3d et à l'ancien
+# provisionneur « Docker Desktop ». Le Kubernetes de Docker Desktop est
+# désormais provisionné par kind, dont le nœud ne publie sur la machine
+# que le port de l'API (6443) : le NodePort reste alors injoignable
+# depuis l'hôte, sans message d'erreur. port-forward fonctionne partout,
+# c'est donc la voie à privilégier.
+#
+# ── Charger l'image dans le nœud ─────────────────────────────────────
+# kind n'utilise pas le magasin d'images de Docker. Si le pod reste en
+# ErrImageNeverPull, importez-la :
+#   kind load docker-image certfleet:local --name desktop
+# ou, sans le binaire kind :
+#   docker save certfleet:local | \
+#     docker exec -i desktop-control-plane ctr -n k8s.io images import -
+# ═══════════════════════════════════════════════════════════════════
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: certfleet
+
+resources:
+  - ../base
+
+images:
+  - name: ghcr.io/stephkoh/certfleet
+    newName: certfleet
+    newTag: local
+
+patches:
+  # Pas d'Ingress sur un poste de travail.
+  - target:
+      kind: Ingress
+      name: certfleet
+    patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: certfleet
+      $patch: delete
+
+  # Ne jamais chercher l'image sur un registre : elle n'y est pas.
+  # L'initContainer partage la même image, d'où les deux corrections.
+  - target:
+      kind: Deployment
+      name: certfleet
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/template/spec/initContainers/0/imagePullPolicy
+        value: Never
+
+  # En local l'accès se fait en HTTP : un cookie « Secure » serait rejeté par le
+  # navigateur et la connexion échouerait sans message explicite.
+  - target:
+      kind: ConfigMap
+      name: certfleet
+    patch: |-
+      - op: replace
+        path: /data/COOKIE_SECURE
+        value: "false"
+      - op: replace
+        path: /data/TRUST_PROXY
+        value: "false"
+
+  # Exposition directe, pour les distributions qui publient les NodePorts.
+  - target:
+      kind: Service
+      name: certfleet
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30080
+
+  # Un poste de travail n'a pas les ressources d'un cluster : volume réduit.
+  - target:
+      kind: StatefulSet
+      name: certfleet-db
+    patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 1Gi

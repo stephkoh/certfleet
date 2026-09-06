@@ -1,0 +1,106 @@
+# ═══════════════════════════════════════════════════════════════════
+# PostgreSQL « pour démarrer ».
+#
+# Si vous avez déjà un serveur PostgreSQL — managé, opérateur CloudNativePG,
+# ou une instance existante — ne déployez PAS ce fichier : renseignez
+# simplement DATABASE_URL dans le Secret et passez à la suite.
+#
+# Cette base contient les clés privées de tous vos certificats, chiffrées.
+# Sauvegardez-la comme telle.
+# ═══════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: Service
+metadata:
+  name: certfleet-db
+  namespace: certfleet
+  labels:
+    app.kubernetes.io/name: certfleet
+    app.kubernetes.io/component: database
+spec:
+  # Service sans IP : le StatefulSet a besoin d'une identité réseau stable.
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: certfleet
+    app.kubernetes.io/component: database
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: certfleet-db
+  namespace: certfleet
+  labels:
+    app.kubernetes.io/name: certfleet
+    app.kubernetes.io/component: database
+spec:
+  serviceName: certfleet-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: certfleet
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: certfleet
+        app.kubernetes.io/component: database
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70          # utilisateur postgres de l'image alpine
+        fsGroup: 70            # sinon le volume appartient à root et l'init échoue
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: certfleet
+            - name: POSTGRES_DB
+              value: certfleet
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: certfleet
+                  key: POSTGRES_PASSWORD
+            # L'image refuse d'initialiser sur un volume non vide : on isole les
+            # données dans un sous-répertoire, ce qui évite l'ennui du lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "certfleet"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "certfleet"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+        # storageClassName: laissé au défaut du cluster ; précisez-le si besoin.

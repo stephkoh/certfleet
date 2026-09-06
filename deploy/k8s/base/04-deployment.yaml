@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: certfleet
+  namespace: certfleet
+  labels:
+    app.kubernetes.io/name: certfleet
+    app.kubernetes.io/component: hub
+spec:
+  # ⚠️ UN SEUL réplica, et c'est structurel.
+  # certfleet porte deux tâches de fond dans le processus : la sonde TLS et le
+  # renouvellement ACME. Deux répliques feraient tourner deux renouvellements
+  # en parallèle — commandes ACME en double, quotas Let's Encrypt consommés
+  # pour rien, et deux déploiements concurrents sur la même cible.
+  # Passer à l'échelle demanderait d'abord un verrou partagé.
+  replicas: 1
+  strategy:
+    # Recreate, pas RollingUpdate : deux pods ne doivent jamais coexister,
+    # même le temps d'une mise à jour.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: certfleet
+      app.kubernetes.io/component: hub
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: certfleet
+        app.kubernetes.io/component: hub
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000        # utilisateur « node » de l'image
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Sans cette attente, le pod sort en erreur tant que la base n'est pas là,
+      # et Kubernetes le relance avec un délai croissant : au premier
+      # déploiement, on observe deux à trois redémarrages et une mise en service
+      # retardée sans raison. On patiente ici plutôt que de boucler sur un crash.
+      #
+      # Même image que l'application : aucun téléchargement supplémentaire, et
+      # l'hôte est déduit de DATABASE_URL, donc cela vaut aussi pour une base
+      # externe au cluster.
+      initContainers:
+        - name: attente-base
+          image: ghcr.io/stephkoh/certfleet:0.1.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: certfleet
+          command:
+            - node
+            - -e
+            - |
+              const net = require("node:net");
+              const u = new URL(process.env.DATABASE_URL);
+              const host = u.hostname, port = Number(u.port || 5432);
+              let essais = 0;
+              const tenter = () => {
+                const s = net.connect({ host, port });
+                const relancer = () => {
+                  s.destroy();
+                  if (++essais % 10 === 1) console.log(`attente de ${host}:${port}…`);
+                  setTimeout(tenter, 2000);
+                };
+                s.once("connect", () => { console.log(`base joignable sur ${host}:${port}`); s.end(); process.exit(0); });
+                s.once("error", relancer);
+                s.setTimeout(3000, relancer);
+              };
+              tenter();
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      containers:
+        - name: certfleet
+          image: ghcr.io/stephkoh/certfleet:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: certfleet
+            - secretRef:
+                name: certfleet
+
+          # Le premier démarrage crée le schéma : on laisse jusqu'à 60 s avant
+          # de déclarer l'échec, sans pour autant retarder les sondes suivantes.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 3
+            failureThreshold: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            # L'application n'écrit rien sur son disque : tout va en base.
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # Seul /tmp reste inscriptible : Node y écrit ses fichiers temporaires.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

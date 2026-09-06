@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: certfleet
+  namespace: certfleet
+data:
+  PORT: "8080"
+
+  # Le cookie de session n'est posé qu'en HTTPS. Ne passez à "false" que si
+  # vous exposez certfleet en clair, ce qui ferait circuler les jetons en clair.
+  COOKIE_SECURE: "true"
+
+  # Derrière un Ingress, l'adresse du client arrive dans X-Forwarded-For :
+  # sans cela le journal d'audit ne verrait que l'IP du contrôleur d'Ingress.
+  TRUST_PROXY: "true"
+
+  SESSION_HOURS: "12"
+  BOOTSTRAP_ADMIN: "admin"
+
+  # Cadence des tâches de fond, en minutes.
+  MONITOR_INTERVAL_MIN: "360"
+  RENEW_INTERVAL_MIN: "720"
+
+  # Annuaire : préférez la configuration par l'interface, qui chiffre le mot de
+  # passe du compte de service en base. Ces valeurs ne servent que de défauts.
+  LDAP_ENABLED: "false"

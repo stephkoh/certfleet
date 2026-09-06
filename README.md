@@ -106,6 +106,23 @@ npm start
 
 Node 20 ou plus, PostgreSQL 14 ou plus. Le schéma se crée au premier démarrage.
 
+### Sur Kubernetes
+
+```bash
+docker build -t certfleet:local .          # ou utilisez l'image publiée
+kubectl create namespace certfleet
+kubectl -n certfleet create secret generic certfleet   --from-literal=DATABASE_URL="postgres://certfleet:MOTDEPASSE@certfleet-db:5432/certfleet"   --from-literal=POSTGRES_PASSWORD="MOTDEPASSE"   --from-literal=ADMIN_TOKEN="$(openssl rand -hex 32)"   --from-literal=CERT_VAULT_KEY="$(openssl rand -base64 32)"
+
+kubectl apply -k deploy/k8s/base      # cluster
+kubectl apply -k deploy/k8s/local     # poste de travail
+```
+
+Manifestes complets, pièges et points de vigilance : [`deploy/README.md`](deploy/README.md).
+
+> **Un seul réplica, et c'est structurel.** Les tâches de renouvellement vivent
+> dans le processus : deux répliques émettraient deux commandes ACME pour le
+> même certificat. La stratégie de déploiement est `Recreate` pour cette raison.
+
 ### Installer un agent sur une cible
 
 ```bash
