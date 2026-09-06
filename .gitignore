@@ -1,0 +1,12 @@
+node_modules/
+.env
+*.log
+*.tmp
+*.bak-*
+data/
+
+# Artefacts des tests d'intégration
+.test.pid
+.test.log
+_*.mjs
+_*.sh
