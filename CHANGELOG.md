@@ -22,6 +22,16 @@ tête de section.
 - `SECURITY.md` : comment signaler une vulnérabilité, ce qui en est une, et ce
   qui relève au contraire d'un choix de conception assumé.
 
+### Sécurité
+
+- Quatre avis de sécurité sur des dépendances transitives corrigés par des
+  `overrides` : `uuid` 11.1.1 (dépassement de tampon), `qs` 6.16.0 (trois
+  dénis de service), `body-parser` 1.20.6 (limite de taille silencieusement
+  désactivée). Les parents épinglaient des versions vulnérables — `ldapts`
+  fixe `uuid` à l'exact `11.1.0`, `body-parser` borne `qs` à `~6.14.0` — d'où
+  le recours aux overrides plutôt qu'à une montée de version majeure de
+  `ldapts`, impossible à valider sans annuaire réel. `npm audit` : 0.
+
 ### Corrigé
 
 - **Le fichier `LICENSE` contenait la GPL-3.0 et non l'AGPL-3.0**, alors que
