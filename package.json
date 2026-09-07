@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "ldapts": "^7.4.0",
+    "ldapts": "^9.0.0",
     "pg": "^8.11.5"
   },
   "keywords": [
