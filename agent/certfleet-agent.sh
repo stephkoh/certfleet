@@ -237,7 +237,10 @@ deploy_keystore(){   # td params_json
     echo "import dans le keystore en échec : $msg"; return 1
   fi
 
-  local out="alias « $alias » remplacé dans $ks"
+  # « remplacé » n'a de sens que si le keystore existait : sans sauvegarde,
+  # c'est qu'on vient de le créer.
+  local verbe; [ -n "$bak" ] && verbe="remplacé" || verbe="posé"
+  local out="alias « $alias » $verbe dans $ks"
   [ -n "$bak" ] && out="$out | sauvegarde : $bak"
 
   if [ -n "$restart" ]; then

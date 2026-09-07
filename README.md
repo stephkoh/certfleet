@@ -229,7 +229,7 @@ des secrets en base, enrôlement d'agent, journal d'audit — puis nettoie tout.
 
 ## État du projet
 
-Version **0.1.0**, extraite d'un ERP interne où elle tourne en production depuis 2026 :
+Version **0.1.0**, éprouvée en production sur un parc réel depuis 2026 :
 émission ACME, déploiement sur Serv-U et HAProxy ALOHA, sonde de vérification et
 renouvellement automatique y sont éprouvés. La gestion des comptes et
 l'authentification par annuaire ont été ajoutées lors de l'extraction et sont
