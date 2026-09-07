@@ -114,6 +114,37 @@ await t("catalogue de cibles cohérent", () => {
   console.log("       " + TARGET_TYPES.length + " types de cible");
 });
 
+console.log("canal des secrets");
+await t("les secrets de cible ne voyagent pas en clair", async () => {
+  const crypto = await import("node:crypto");
+  const fs = await import("node:fs");
+
+  // Le hub chiffre les paramètres sensibles avec la MÊME clé AES que la clé
+  // privée : ils ne doivent apparaître ni dans le code, ni en clair ailleurs.
+  const src = fs.readFileSync("src/routes/certificates.js", "utf8");
+  assert.ok(src.includes("secrets_cipher"), "canal chiffré absent du hub");
+  assert.ok(/for \(const k of Object\.keys\(extra\)\) if \(k\.endsWith\("_enc"\)\) delete extra\[k\]/.test(src),
+    "les valeurs chiffrées au repos partent quand même vers l'agent");
+
+  // Aller-retour AES-256-CBC, tel que l'agent le fait.
+  const key = crypto.randomBytes(32), iv = crypto.randomBytes(16);
+  const secrets = { storepass: "MotDePasseKeystore#2026" };
+  const c = crypto.createCipheriv("aes-256-cbc", key, iv);
+  const blob = Buffer.concat([c.update(JSON.stringify(secrets), "utf8"), c.final()]);
+  const d = crypto.createDecipheriv("aes-256-cbc", key, iv);
+  const back = JSON.parse(Buffer.concat([d.update(blob), d.final()]).toString("utf8"));
+  assert.strictEqual(back.storepass, secrets.storepass);
+  assert.ok(!blob.toString("latin1").includes("MotDePasse"), "le clair transparaît dans le chiffré");
+});
+await t("tout champ « password » du catalogue est chiffré au repos", async () => {
+  const fs = await import("node:fs");
+  const src = fs.readFileSync("src/routes/certificates.js", "utf8");
+  assert.ok(src.includes("const SECRET_FIELDS = new Set("), "liste des champs secrets absente");
+  assert.ok(!/if \(p\.password != null/.test(src), "le chiffrement est resté limité au seul champ password");
+});
+const passwordFields = TARGET_TYPES.flatMap(t2 => (t2.fields || []).filter(f => f.type === "password").map(f => t2.type + "." + f.key));
+console.log("       champs sensibles : " + passwordFields.join(", "));
+
 console.log("agent");
 await t("les scripts servis par le hub existent", () => {
   const src = fs.readFileSync("src/routes/agents.js", "utf8");

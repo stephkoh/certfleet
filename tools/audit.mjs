@@ -24,7 +24,8 @@ const ok = (msg) => console.log(`  ✓ ${msg}`);
 function scan(patterns, label) {
   section(label);
   let found = 0;
-  for (const f of files) {
+  // Ce fichier contient les motifs recherchés : il se signalerait lui-même.
+  for (const f of files.filter((x) => rel(x) !== "tools/audit.mjs")) {
     const lines = read(f).split("\n");
     lines.forEach((l, i) => {
       for (const { re, why } of patterns) {
@@ -37,7 +38,10 @@ function scan(patterns, label) {
 
 // ── 1. Vocabulaire et chemins hérités de l'ERP d'origine ──
 scan([
-  { re: /IT\s*[›>»]\s*ADM|onglet ADM|module ADM|agent ADM/i, why: "renvoie à un écran de l'ERP d'origine" },
+  // Le sigle seul suffit : « canal ADM » avait échappé à un motif plus étroit.
+  // ADMIN_TOKEN et le mot « admin » sont exclus, ils sont légitimes ici.
+  { re: /(?<![A-Za-z_])ADM(?![A-Za-z_])/, why: "sigle du module de l'ERP d'origine" },
+  { re: /agent natif|agent ADM/i, why: "formulation propre à l'ERP d'origine" },
   { re: /\/api\/adm\//, why: "chemin d'API inexistant dans certfleet" },
   { re: /\blot\s*[123]\b|lots? suivants?/i, why: "découpage en lots propre au projet d'origine" },
   { re: /SUDO_SECURE|\bCVE\b|\bdnf\b/, why: "fonctionnalité retirée de l'agent" },
@@ -114,6 +118,23 @@ for (const t of types) {
   const flag = /NON TRAITÉ|MANQUANTS/.test(verdict) ? "✗" : "✓";
   console.log(`  ${flag} ${t.type.padEnd(15)} ${verdict.padEnd(24)} ${detail}`);
 }
+
+// ── 3 bis. Chaque type « agent » déclare-t-il son système ? ──
+section("3 bis. Système déclaré par les types agent");
+let osMissing = 0;
+for (const t of types.filter((x) => x.mode === "agent")) {
+  // Recherche littérale plutôt que par expression régulière : dans un gabarit
+  // JavaScript, les séquences \s et \{ sont consommées avant d'atteindre le
+  // moteur d'expressions régulières, et le motif ne correspond plus à rien.
+  const lines = certs.split("\n");
+  const idx = lines.findIndex((l) => l.includes(`{ type: "${t.type}",`));
+  const declared = idx >= 0 && /\bos: "(linux|windows|both)"/.test(lines[idx]);
+  if (!declared) {
+    bad("src/routes/certificates.js", idx + 1, `le type « ${t.type} » ne déclare pas son système`);
+    osMissing++;
+  }
+}
+if (!osMissing) ok("tous les types agent déclarent leur système (linux / windows / both)");
 
 // ── 4. L'agent et le hub parlent-ils le même langage ? ──
 section("4. Cohérence agent ↔ hub");

@@ -182,6 +182,27 @@ function Send-Result {
 # Chiffrement hybride :
 #   aeskey_enc = RSA-OAEP-SHA256(cle AES 32 o, cle publique de CET agent)
 #   key_cipher = AES-256-CBC(cle privee PEM)
+# Déchiffre un tampon AES-256-CBC avec la clé AES du payload. Sert à la clé
+# privée comme aux paramètres sensibles, qui partagent la même clé.
+function Unprotect-Blob {
+  param([byte[]]$AesKey, [string]$IvHex, [string]$CipherB64)
+  $aes = [System.Security.Cryptography.Aes]::Create()
+  $aes.Key = $AesKey
+  $aes.IV = ConvertFrom-HexString $IvHex
+  $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+  $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+  $cipher = [Convert]::FromBase64String($CipherB64)
+  [System.Text.Encoding]::UTF8.GetString(
+    $aes.CreateDecryptor().TransformFinalBlock($cipher, 0, $cipher.Length))
+}
+
+function Get-PayloadAesKey {
+  param($Payload)
+  $rsa = Get-AgentKey
+  $rsa.Decrypt([Convert]::FromBase64String($Payload.aeskey_enc),
+               [System.Security.Cryptography.RSAEncryptionPadding]::OaepSHA256)
+}
+
 function Unprotect-PrivateKey {
   param($Payload)
   $rsa    = Get-AgentKey
@@ -234,45 +255,125 @@ function Install-InStore {
 }
 
 # ── Liaison au service ──────────────────────────────────────────────────────
+# Ces fonctions n'utilisent volontairement PAS les modules WebAdministration,
+# IISAdministration ni les composants enfichables Exchange.
+#
+# Pourquoi : ces modules ciblent le .NET Framework. Sous PowerShell 7, qui
+# tourne sur .NET Core, ils sont chargés dans une session de compatibilité
+# (WinPSCompatSession) qui ne renvoie que des objets DESERIALISES — sans
+# methodes. Un appel du type $binding.AddSslCertificate(...) y echoue avec
+# « does not contain a method named AddSslCertificate ». Les composants
+# enfichables Exchange, eux, n'existent tout simplement pas en .NET Core.
+#
+# On passe donc par les outils natifs, disponibles sur tout Windows Server et
+# indépendants de la version de PowerShell : appcmd.exe et netsh http pour IIS,
+# et une session Windows PowerShell explicite pour Exchange et RDS.
+
+# Identifiant d'application d'IIS pour HTTP.sys. Il n'est pas arbitraire :
+# c'est celui qu'IIS utilise lui-même, et le réutiliser évite qu'un futur
+# passage par la console IIS ne considère la liaison comme étrangère.
+$IIS_APPID = "{4dc3e181-e14b-4a21-b022-59fc669b0914}"
+
+function Invoke-Native {
+  param([string]$Exe, [string[]]$Arguments)
+  $out = & $Exe @Arguments 2>&1 | Out-String
+  [pscustomobject]@{ Code = $LASTEXITCODE; Output = $out.Trim() }
+}
+
+# Exécute un bloc dans Windows PowerShell 5.1 : Exchange et RemoteDesktop n'ont
+# jamais été portés sur .NET Core et n'y fonctionneront pas.
+function Invoke-WindowsPowerShell {
+  param([string]$Script)
+  $exe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+  if (-not (Test-Path $exe)) { throw "Windows PowerShell 5.1 introuvable : $exe" }
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Script))
+  Invoke-Native -Exe $exe -Arguments @("-NoProfile", "-NonInteractive", "-EncodedCommand", $encoded)
+}
+
 function Set-IisBinding {
   param($Certificate, $Params)
-  Import-Module WebAdministration -ErrorAction Stop
 
-  $site    = if ($Params.PSObject.Properties['site']) { $Params.site } else { "Default Web Site" }
+  $appcmd = Join-Path $env:SystemRoot "System32\inetsrv\appcmd.exe"
+  if (-not (Test-Path $appcmd)) { throw "IIS ne semble pas installé : $appcmd introuvable" }
+
+  $site    = if ($Params.PSObject.Properties['site'])    { $Params.site }    else { "Default Web Site" }
   $binding = if ($Params.PSObject.Properties['binding']) { $Params.binding } else { "https :443:" }
-  $store   = if ($Params.PSObject.Properties['store']) { $Params.store } else { "My" }
+  $store   = if ($Params.PSObject.Properties['store'])   { $Params.store }   else { "My" }
 
-  # Format attendu : "https <ip>:<port>:<en-tete d'hote>", champs vides admis.
+  # Format attendu : « https <ip>:<port>:<en-tete d'hote> », champs vides admis.
   $parts = $binding -split '\s+', 2
   $spec  = if ($parts.Count -gt 1) { $parts[1] } else { ":443:" }
   $f     = $spec -split ':', 3
   $ip    = if ($f[0]) { $f[0] } else { "*" }
   $port  = if ($f.Count -gt 1 -and $f[1]) { $f[1] } else { "443" }
-  # $host est une variable automatique en lecture seule : on ne l'utilise pas.
   $hostHeader = if ($f.Count -gt 2) { $f[2] } else { "" }
 
-  $existing = Get-WebBinding -Name $site -Protocol https -Port $port -ErrorAction SilentlyContinue
-  if (-not $existing) {
-    New-WebBinding -Name $site -Protocol https -IPAddress $ip -Port $port -HostHeader $hostHeader `
-      -SslFlags $(if ($hostHeader) { 1 } else { 0 }) | Out-Null
+  $bindInfo = "$ip`:$port`:$hostHeader"
+  $notes = @()
+
+  # La liaison du site est créée si elle manque. appcmd renvoie une erreur si
+  # elle existe déjà : ce cas est normal, on ne le remonte pas comme un échec.
+  $add = Invoke-Native -Exe $appcmd -Arguments @(
+    "set", "site", "/site.name:$site",
+    "/+bindings.[protocol='https',bindingInformation='$bindInfo']")
+  if ($add.Code -eq 0) { $notes += "liaison $bindInfo créée sur « $site »" }
+  elseif ($add.Output -match "already exists|existe") { $notes += "liaison $bindInfo déjà présente" }
+  else { throw "création de la liaison IIS impossible : $($add.Output)" }
+
+  # HTTP.sys n'a pas de commande de mise à jour : on retire puis on rajoute.
+  # L'échec de la suppression est attendu quand aucun certificat n'était lié.
+  $selector = if ($hostHeader) { @("hostnameport=$hostHeader`:$port") } else { @("ipport=0.0.0.0:$port") }
+  Invoke-Native -Exe "netsh" -Arguments (@("http", "delete", "sslcert") + $selector) | Out-Null
+
+  $bind = Invoke-Native -Exe "netsh" -Arguments (@("http", "add", "sslcert") + $selector + @(
+    "certhash=$($Certificate.Thumbprint)", "appid=$IIS_APPID", "certstorename=$store"))
+  if ($bind.Code -ne 0) { throw "netsh http add sslcert a échoué : $($bind.Output)" }
+
+  # Une liaison avec en-tête d'hôte exige SNI : sans ce drapeau, IIS ignore
+  # l'en-tête et sert le certificat par défaut du port.
+  if ($hostHeader) {
+    Invoke-Native -Exe $appcmd -Arguments @(
+      "set", "site", "/site.name:$site",
+      "/bindings.[protocol='https',bindingInformation='$bindInfo'].sslFlags:1") | Out-Null
+    $notes += "SNI activé"
   }
 
-  # Rebinding : on remplace l'ancien certificat par le nouveau sur ce port.
-  $b = Get-WebBinding -Name $site -Protocol https -Port $port
-  $b.AddSslCertificate($Certificate.Thumbprint, $store) | Out-Null
-  "IIS : site '$site' lie sur $ip`:$port$(if ($hostHeader) { " (hote $hostHeader)" })"
+  $notes += "certificat lié (empreinte $($Certificate.Thumbprint.Substring(0,16))…)"
+  "IIS : " + ($notes -join ", ")
 }
 
 function Set-ExchangeServices {
   param($Certificate, $Params)
-  # Exchange expose ses applets via un composant logiciel enfichable, absent
-  # d'une session PowerShell ordinaire.
-  if (-not (Get-Command Enable-ExchangeCertificate -ErrorAction SilentlyContinue)) {
-    Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn -ErrorAction Stop
-  }
+
   $services = if ($Params.PSObject.Properties['services']) { $Params.services } else { "IIS,SMTP" }
-  Enable-ExchangeCertificate -Thumbprint $Certificate.Thumbprint -Services $services -Force
-  "Exchange : services $services actives sur l'empreinte $($Certificate.Thumbprint)"
+  $purge    = $Params.PSObject.Properties['purge_old'] -and $Params.purge_old
+
+  $script = @"
+`$ErrorActionPreference = 'Stop'
+Add-PSSnapin Microsoft.Exchange.Management.PowerShell.SnapIn
+Enable-ExchangeCertificate -Thumbprint '$($Certificate.Thumbprint)' -Services '$services' -Force
+Write-Output "services $services activés"
+"@
+
+  if ($purge) {
+    # On ne supprime que les certificats EXPIRÉS et non liés à un service :
+    # supprimer un certificat encore utilisé couperait Exchange.
+    $script += @"
+
+`$vieux = Get-ExchangeCertificate | Where-Object {
+  `$_.NotAfter -lt (Get-Date) -and `$_.Thumbprint -ne '$($Certificate.Thumbprint)' -and
+  (`$_.Services -eq 'None' -or `$_.Services -eq `$null)
+}
+foreach (`$c in `$vieux) {
+  Remove-ExchangeCertificate -Thumbprint `$c.Thumbprint -Confirm:`$false
+  Write-Output "certificat expiré retiré : `$(`$c.Thumbprint)"
+}
+"@
+  }
+
+  $r = Invoke-WindowsPowerShell -Script $script
+  if ($r.Code -ne 0) { throw "Exchange : $($r.Output)" }
+  "Exchange : " + ($r.Output -replace "`r?`n", " | ")
 }
 
 function Set-RdsCertificate {
@@ -280,26 +381,44 @@ function Set-RdsCertificate {
   $deployment = if ($Params.PSObject.Properties['deployment']) { $Params.deployment } else { "standalone" }
 
   if ($deployment -eq "rds-deployment") {
-    Import-Module RemoteDesktop -ErrorAction Stop
-    $broker = $Params.connection_broker
+    $broker = if ($Params.PSObject.Properties['connection_broker']) { $Params.connection_broker } else { $env:COMPUTERNAME }
     $pwd = New-EphemeralPassword
     $tmp = Join-Path $env:TEMP "certfleet-rds.pfx"
     [IO.File]::WriteAllBytes($tmp, $Certificate.Export(
       [System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $pwd))
     try {
-      foreach ($role in @("RDGateway", "RDWebAccess", "RDRedirector", "RDPublishing")) {
-        Set-RDCertificate -Role $role -ImportPath $tmp `
-          -Password (ConvertTo-SecureString $pwd -AsPlainText -Force) `
-          -ConnectionBroker $broker -Force
-      }
-    } finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
-    "RDS : certificat applique aux quatre roles du deploiement"
-  } else {
-    # Passerelle autonome : la liaison se fait par le fournisseur WMI de RD Gateway.
+      # Le module RemoteDesktop est lui aussi propre à Windows PowerShell.
+      $script = @"
+`$ErrorActionPreference = 'Stop'
+Import-Module RemoteDesktop
+`$sec = ConvertTo-SecureString '$pwd' -AsPlainText -Force
+foreach (`$role in @('RDGateway','RDWebAccess','RDRedirector','RDPublishing')) {
+  Set-RDCertificate -Role `$role -ImportPath '$tmp' -Password `$sec -ConnectionBroker '$broker' -Force
+  Write-Output "rôle `$role"
+}
+"@
+      $r = Invoke-WindowsPowerShell -Script $script
+      if ($r.Code -ne 0) { throw "RDS : $($r.Output)" }
+      "RDS : certificat appliqué — " + ($r.Output -replace "`r?`n", ", ")
+    } finally {
+      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    }
+  }
+  else {
+    # Passerelle autonome : le fournisseur WMI de RD Gateway fonctionne
+    # nativement sous PowerShell 7, aucune session de compatibilité requise.
+    #
+    # CertHash attend un TABLEAU D'OCTETS (uint8[]), pas l'empreinte sous forme
+    # de chaîne hexadécimale : GetCertHash() donne exactement cela.
     $gw = Get-CimInstance -Namespace "root\CIMV2\TerminalServices" -ClassName Win32_TSGatewayServerSettings
-    Invoke-CimMethod -InputObject $gw -MethodName SetCertificate `
-      -Arguments @{ CertHash = $Certificate.Thumbprint } | Out-Null
-    "RD Gateway : certificat applique (empreinte $($Certificate.Thumbprint))"
+    $r = Invoke-CimMethod -InputObject $gw -MethodName SetCertificate `
+           -Arguments @{ CertHash = $Certificate.GetCertHash() }
+    if ($r.ReturnValue -ne 0) { throw "SetCertificate a renvoyé $($r.ReturnValue)" }
+
+    # Le service ne relit pas sa configuration à chaud : sans redémarrage, la
+    # passerelle continue de présenter l'ancien certificat.
+    Restart-Service -Name TSGateway -Force
+    "RD Gateway : certificat appliqué et service TSGateway redémarré (empreinte $($Certificate.Thumbprint.Substring(0,16))…)"
   }
 }
 
@@ -312,6 +431,21 @@ function Invoke-DeployCert {
     $keyPem  = Unprotect-PrivateKey -Payload $Payload
     $certPem = $Payload.cert_pem
     $params  = if ($Payload.PSObject.Properties['params']) { $Payload.params } else { [pscustomobject]@{} }
+
+    # Les paramètres sensibles voyagent chiffrés avec la même clé AES que la
+    # clé privée : ils ne sont lisibles que par cet agent, et n'ont jamais
+    # transité en clair dans la file de commandes du hub.
+    if ($Payload.PSObject.Properties['secrets_cipher'] -and $Payload.secrets_cipher) {
+      try {
+        $clair = Unprotect-Blob -AesKey (Get-PayloadAesKey -Payload $Payload) `
+                   -IvHex $Payload.secrets_iv -CipherB64 $Payload.secrets_cipher
+        foreach ($kv in ($clair | ConvertFrom-Json).PSObject.Properties) {
+          $params | Add-Member -NotePropertyName $kv.Name -NotePropertyValue $kv.Value -Force
+        }
+      } catch {
+        throw "déchiffrement des paramètres sensibles impossible : $($_.Exception.Message)"
+      }
+    }
     $type    = if ($Payload.PSObject.Properties['target_type']) { $Payload.target_type } else { "" }
     $mode    = if ($Payload.PSObject.Properties['mode']) { $Payload.mode } else { "file" }
 
