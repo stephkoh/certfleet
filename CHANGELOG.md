@@ -15,6 +15,11 @@ tête de section.
 
 ### Ajouté
 
+- Pied de page dans l'interface indiquant la version, la licence et un lien vers
+  le code source. La section 13 de l'AGPL demande qu'une version modifiée
+  propose visiblement son source aux utilisateurs qui l'atteignent par le
+  réseau : ce lien rend l'obligation évidente pour qui modifiera certfleet.
+- `/healthz` renvoie la version, pour que l'interface ne la code pas en dur.
 - `CONTRIBUTING.md` : accord de contribution permettant au projet de rester
   publié à la fois sous AGPL-3.0 et sous licence commerciale, et guide pratique
   pour proposer un correctif ou un connecteur.

@@ -103,4 +103,39 @@
         "</div>";
     },
   };
+
+  // ── Pied de page ────────────────────────────────────────────────────
+  // La section 13 de l'AGPL demande qu'une version modifiée propose
+  // visiblement son code source aux utilisateurs qui l'atteignent par le
+  // réseau. Ce lien rend l'obligation évidente pour qui modifiera certfleet,
+  // et signale la licence à ceux qui découvrent l'outil.
+  const SOURCE = "https://github.com/stephkoh/certfleet";
+
+  async function injectFooter() {
+    if (document.getElementById("cf-footer")) return;
+
+    let version = "";
+    try {
+      const r = await fetch("/healthz");
+      if (r.ok) version = (await r.json()).version || "";
+    } catch (_) { /* version simplement omise */ }
+
+    const f = document.createElement("footer");
+    f.id = "cf-footer";
+    f.style.cssText = "width:100%;text-align:center;padding:18px 12px 22px;" +
+      "font-size:11.5px;color:#8892a3;line-height:1.7;font-family:inherit";
+    f.innerHTML =
+      "<b>certfleet</b>" + (version ? " " + esc(version) : "") +
+      ' · <a href="' + SOURCE + '/blob/main/LICENSE" target="_blank" rel="noopener"' +
+        ' style="color:#8892a3">AGPL-3.0</a>' +
+      ' · <a href="' + SOURCE + '" target="_blank" rel="noopener"' +
+        ' style="color:#0b3d91">code source</a>';
+    document.body.appendChild(f);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", injectFooter);
+  } else {
+    injectFooter();
+  }
 })();

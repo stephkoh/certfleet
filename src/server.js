@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import express from "express";
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { initSchema } from "./db.js";
 import {
@@ -49,7 +50,13 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/healthz", (_req, res) => res.json({ ok: true }));
+// La version vient du paquet : la coder en dur dans l'interface la ferait
+// diverger dès la première publication.
+const VERSION = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "package.json"), "utf8")
+).version;
+
+app.get("/healthz", (_req, res) => res.json({ ok: true, version: VERSION }));
 
 app.post("/api/login", loginHandler);
 app.post("/api/logout", logoutHandler);
