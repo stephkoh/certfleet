@@ -99,15 +99,62 @@ export class AcmeClient {
 }
 
 // ── Vérif de propagation DNS via DoH (DNS:53 sortant souvent filtré) ──
-async function dohTxt(name) {
-  for (const base of ["https://dns.google/resolve", "https://cloudflare-dns.com/dns-query"]) {
+//
+// On interroge PLUSIEURS résolveurs indépendants, et non le premier qui
+// répond. Let's Encrypt valide depuis plusieurs points d'observation : il
+// suffit qu'un seul tombe sur un serveur faisant autorité en retard pour que
+// la validation échoue. Se fier à un seul avis revient à lancer une validation
+// qu'on sait pouvoir rater.
+const RESOLVEURS = [
+  { nom: "Google",     url: "https://dns.google/resolve" },
+  { nom: "Cloudflare", url: "https://cloudflare-dns.com/dns-query" },
+  { nom: "AdGuard",    url: "https://dns.adguard-dns.com/resolve" },
+];
+
+async function dohQuery(base, name, type) {
+  const r = await fetch(`${base}?name=${encodeURIComponent(name)}&type=${type}`,
+    { headers: { accept: "application/dns-json" } });
+  return r.json();
+}
+
+// Renvoie [{ nom, valeurs }] pour chaque résolveur ayant répondu. Un résolveur
+// injoignable est simplement absent : on ne le compte ni pour ni contre.
+async function dohTxtParResolveur(name) {
+  const out = [];
+  await Promise.all(RESOLVEURS.map(async (res) => {
     try {
-      const r = await fetch(`${base}?name=${encodeURIComponent(name)}&type=TXT`, { headers: { accept: "application/dns-json" } });
-      const j = await r.json();
-      return (j.Answer || []).map(a => String(a.data).replace(/^"|"$/g, "").replace(/\\"/g, '"'));
-    } catch { /* essaie le suivant */ }
+      const j = await dohQuery(res.url, name, "TXT");
+      out.push({
+        nom: res.nom,
+        valeurs: (j.Answer || []).filter(a => a.type === 16)
+          .map(a => String(a.data).replace(/^"|"$/g, "").replace(/\\"/g, '"')),
+      });
+    } catch { /* résolveur injoignable : ignoré */ }
+  }));
+  return out;
+}
+
+async function dohTxt(name) {
+  const avis = await dohTxtParResolveur(name);
+  if (!avis.length) return null;                 // indéterminé
+  return avis.flatMap(a => a.valeurs);
+}
+
+// Liste les serveurs faisant autorité, pour orienter la personne qui débogue.
+async function dohNameServers(name) {
+  const labels = String(name).replace(/\.$/, "").split(".");
+  for (let i = 0; i < labels.length - 1; i++) {
+    const zone = labels.slice(i).join(".");
+    for (const res of RESOLVEURS) {
+      try {
+        const j = await dohQuery(res.url, zone, "NS");
+        const ns = (j.Answer || []).filter(a => a.type === 2)
+          .map(a => String(a.data).replace(/\.$/, ""));
+        if (ns.length) return { zone, ns };
+      } catch { /* suivant */ }
+    }
   }
-  return null; // indéterminé
+  return null;
 }
 // Suivi de délégation CNAME : si _acme-challenge.<domaine> est un CNAME vers une
 // autre zone (ex. example.com → …dv.example.net pilotable par API), on écrit
@@ -162,6 +209,24 @@ async function expliquerEchecDns(recordName, erreurs, propagationVue) {
   const brut = JSON.stringify(erreurs);
   if (!propagationVue || !/NXDOMAIN/i.test(brut)) return brut;
 
+  // Deux causes possibles, et elles n'appellent pas la même action.
+  // Un désaccord entre résolveurs désigne une zone désynchronisée : attendre
+  // n'y changera rien, il faut réparer la recopie entre serveurs.
+  const avis = await dohTxtParResolveur(recordName).catch(() => []);
+  const voient = avis.filter(a => a.valeurs.length > 0);
+  if (avis.length > 1 && voient.length > 0 && voient.length < avis.length) {
+    const ns = await dohNameServers(recordName).catch(() => null);
+    return brut + "\n\nDIAGNOSTIC : les résolveurs publics ne sont pas d'accord. "
+      + voient.map(a => a.nom).join(", ") + " voi" + (voient.length > 1 ? "ent" : "t")
+      + " l'enregistrement, " + avis.filter(a => !a.valeurs.length).map(a => a.nom).join(", ")
+      + " non. Les serveurs faisant autorité de cette zone ne servent donc pas le même contenu. "
+      + (ns ? `Zone ${ns.zone}, serveurs : ${ns.ns.join(", ")}. Interrogez-les un par un pour repérer celui qui est en retard. ` : "")
+      + "Let's Encrypt valide depuis plusieurs points d'observation : il suffit qu'un seul tombe "
+      + "sur le serveur en retard pour que la validation échoue. Attendre n'y changera rien tant "
+      + "que la recopie de zone entre serveurs n'est pas réparée — vérifiez le champ REFRESH du "
+      + "SOA et que le primaire notifie bien ses secondaires.";
+  }
+
   const soa = await dohNegativeTtl(recordName).catch(() => null);
   const attente = soa
     ? `Le TTL négatif de la zone ${soa.zone} est de ${soa.minimum} s`
@@ -177,13 +242,37 @@ async function expliquerEchecDns(recordName, erreurs, propagationVue) {
     + "Pour éviter cela à l'avenir, abaissez le champ MINIMUM du SOA de cette zone à 300 ou 900 secondes.";
 }
 
+// Attend que TOUS les résolveurs interrogés voient la valeur. Le désaccord
+// entre eux est le symptôme d'une zone servie par des serveurs désynchronisés,
+// et il est signalé explicitement : c'est une panne d'infrastructure DNS, pas
+// une lenteur de propagation, et attendre davantage n'y changera rien.
 async function waitDnsPropagation(name, value, { tries = 20, delay = 6000, log = () => {} } = {}) {
+  let dernierDesaccord = null;
+
   for (let i = 0; i < tries; i++) {
-    const vals = await dohTxt(name);
-    if (vals && vals.includes(value)) { log(`TXT ${name} visible (essai ${i + 1})`); return true; }
+    const avis = await dohTxtParResolveur(name);
+    if (avis.length) {
+      const voient = avis.filter(a => a.valeurs.includes(value));
+      if (voient.length === avis.length) {
+        log(`TXT ${name} vu par ${avis.map(a => a.nom).join(", ")} (essai ${i + 1})`);
+        return true;
+      }
+      if (voient.length > 0) {
+        dernierDesaccord = {
+          oui: voient.map(a => a.nom),
+          non: avis.filter(a => !a.valeurs.includes(value)).map(a => a.nom),
+        };
+      }
+    }
     await new Promise(r => setTimeout(r, delay));
   }
-  log(`TXT ${name} non confirmé après ${tries} essais — on tente quand même la validation`);
+
+  if (dernierDesaccord) {
+    log(`TXT ${name} vu par ${dernierDesaccord.oui.join(", ")} mais PAS par ${dernierDesaccord.non.join(", ")}`);
+    log("Les résolveurs ne sont pas d'accord : les serveurs faisant autorité de cette zone ne servent pas le même contenu.");
+  } else {
+    log(`TXT ${name} non confirmé après ${tries} essais — on tente quand même la validation`);
+  }
   return false;
 }
 
