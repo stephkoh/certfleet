@@ -19,6 +19,15 @@ tête de section.
   publié à la fois sous AGPL-3.0 et sous licence commerciale, et guide pratique
   pour proposer un correctif ou un connecteur.
 - Gabarit de pull request rappelant les vérifications attendues et l'accord.
+- `SECURITY.md` : comment signaler une vulnérabilité, ce qui en est une, et ce
+  qui relève au contraire d'un choix de conception assumé.
+
+### Corrigé
+
+- **Le fichier `LICENSE` contenait la GPL-3.0 et non l'AGPL-3.0**, alors que
+  toute la documentation annonçait l'AGPL. La GPL n'a pas de clause de réseau :
+  une version modifiée pouvait être exploitée en service réseau sans que ses
+  modifications soient publiées. Le texte officiel de l'AGPL-3.0 le remplace.
 
 ## [0.1.0] — 2026-09-07
 

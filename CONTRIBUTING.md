@@ -111,5 +111,5 @@ qu'il a fallu changer — vaut autant qu'un correctif.
 
 ## Signaler un problème de sécurité
 
-N'ouvrez pas d'issue publique. Passez par les *security advisories* de GitHub,
-onglet **Security** du dépôt, qui permettent une divulgation privée.
+N'ouvrez pas d'issue publique : la marche à suivre est dans
+[SECURITY.md](SECURITY.md).
