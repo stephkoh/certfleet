@@ -25,6 +25,13 @@ DNS-01, compte ES256, CSR généré en interne. Fournisseur DNS enfichable (Gand
 vsftpd, Serv-U, GLPI, IIS, Exchange, passerelle RDS, keystore Java, F5 BIG-IP,
 Check Point, VMware Horizon UAG, et un connecteur générique par API.
 
+**Kubernetes** — écrit le Secret TLS dans le cluster par appel à son API, et
+redémarre ce qui monte le certificat en volume. Cela ne remplace pas
+cert-manager : sur un cluster où il gère déjà l'émission, laissez-le faire.
+Ce connecteur sert à faire **entrer** dans un cluster un certificat émis
+ailleurs — un wildcard obtenu par délégation, à recopier dans plusieurs
+namespaces et plusieurs clusters.
+
 **Vérification réelle** — une sonde rouvre une connexion TLS vers le service et compare
 l'empreinte SHA-256 servie à celle attendue. Elle ne lit pas la base de données : elle
 détecte donc le cas classique du certificat bien écrit sur le disque mais jamais rechargé

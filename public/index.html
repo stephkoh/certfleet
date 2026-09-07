@@ -537,7 +537,7 @@ function renderTypes(){
       ${t.note?`<div class="tt-note">${esc(t.note)}</div>`:''}
       ${t.mode==='agent'?`<div class="tt-note" style="color:#1e40af;background:#e0edff">🔧 Cible <b>agent</b> — nécessite l'agent certfleet installé sur le serveur, plus le helper et sa règle sudoers (voir « <b>Prérequis d'une cible agent</b> » en haut de cet onglet).</div>`:''}
       ${t.mode==='api'?`<div class="tt-note" style="color:#92400e;background:#fffbeb">🔌 <b>Connecteur API</b> — aucun agent à installer : certfleet appelle directement l'API de l'appliance. ${t.type==='aloha'?'Implémenté.':'⚠️ Non implémenté à ce jour : le déploiement échouera.'}</div>`:''}
-      ${t.mode==='k8s'?`<div class="tt-note" style="color:#6d28d9;background:#f3e8ff">☸️ <b>Monitoring seul</b> — cert-manager reste maître de l'émission ; certfleet supervise.</div>`:''}
+      ${(t.mode==='api'&&t.type==='k8s_secret')?`<div class="tt-note" style="color:#6d28d9;background:#f3e8ff">☸️ <b>Kubernetes</b> — le Secret TLS est écrit par appel à l'API du cluster, avec un jeton de ServiceAccount. Ne remplace pas cert-manager : sert à faire ENTRER dans un cluster un certificat émis ailleurs.</div>`:''}
       <div style="margin-top:6px">${(t.fields||[]).map(f=>`<div class="tt-field">• <b>${esc(f.label)}</b> <span class="muted">(${f.type}${f.required?', requis':''})</span></div>`).join('')}</div>
       ${guideHtml(t)}
     </div>`).join('');

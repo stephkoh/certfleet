@@ -15,6 +15,18 @@ tête de section.
 
 ### Ajouté
 
+- **Connecteur Kubernetes** : le type Secret TLS écrit désormais réellement dans
+  le cluster, par appel à l'API avec un jeton de ServiceAccount — un par
+  cluster, donc révocable seul. Il remplace le Secret s'il existe, le crée
+  sinon, et sait redémarrer les déploiements, statefulsets et daemonsets qui
+  montent le certificat en volume : sans cela ils gardent l'ancien en mémoire et
+  continuent de servir un certificat périmé. Ne remplace pas cert-manager : sert
+  à faire entrer dans un cluster un certificat émis ailleurs.
+- `_httpRequest` accepte une autorité de certification : fournir la CA du
+  cluster vaut mieux que désactiver la vérification TLS.
+
+### Ajouté
+
 - Pied de page dans l'interface indiquant la version, la licence et un lien vers
   le code source. La section 13 de l'AGPL demande qu'une version modifiée
   propose visiblement son source aux utilisateurs qui l'atteignent par le
@@ -56,7 +68,7 @@ un usage générique.
 - Déploiement sur **18 types de cible** : nginx, Apache, HAProxy, HAProxy ALOHA,
   Caddy, Traefik, vsftpd, Serv-U, GLPI, IIS, Exchange, passerelle RDS, keystore
   Java, F5 BIG-IP, Check Point, VMware Horizon UAG, connecteur générique, et
-  Kubernetes en supervision seule.
+  et Kubernetes (Secret TLS écrit via l'API du cluster).
 - **Sonde TLS de vérification** : l'empreinte réellement servie est comparée à
   celle attendue, ce qui détecte le certificat écrit sur disque mais jamais
   rechargé par le service.

@@ -51,11 +51,16 @@ router.use((req, res, next) => {
 //      | 'api'   (le hub appelle directement l'API de l'appliance)
 //      | 'k8s'   (surveillance seule : cert-manager reste maître)
 export const TARGET_TYPES = [
-  { type: "k8s_secret",   label: "Kubernetes (Secret TLS)", mode: "k8s",   icon: "☸️",
-    note: "Surveillance seule : cert-manager reste maître de l'émission. certfleet vérifie ce qui est réellement servi.",
-    fields: [ { key: "cluster", label: "Cluster", type: "text", required: true },
+  { type: "k8s_secret",   label: "Kubernetes (Secret TLS)", mode: "api",   icon: "\u2638\uFE0F",
+    note: "Écrit le Secret TLS dans le cluster via l'API, et redémarre au besoin ce qui monte le certificat. Sur un cluster où cert-manager gère déjà l'émission, laissez-le faire : ce connecteur sert aux certificats émis À L'EXTÉRIEUR du cluster.",
+    fields: [ { key: "cluster", label: "Nom du cluster (libellé)", type: "text", required: true },
+              { key: "api_url", label: "URL de l'API Kubernetes", type: "text", required: true, placeholder: "https://10.0.0.1:6443" },
+              { key: "token", label: "Jeton du ServiceAccount", type: "password", required: true },
+              { key: "ca_cert_pem", label: "Certificat de l'autorité du cluster (PEM)", type: "text" },
+              { key: "insecure", label: "Ne pas vérifier le certificat de l'API", type: "bool" },
               { key: "namespace", label: "Namespace", type: "text", required: true },
-              { key: "secret", label: "Nom du Secret", type: "text", required: true } ] },
+              { key: "secret", label: "Nom du Secret TLS", type: "text", required: true },
+              { key: "restart", label: "Redémarrages après pose", type: "text", placeholder: "deployment/front,statefulset/api" } ] },
   { type: "nginx",        label: "nginx", mode: "agent", os: "linux", icon: "🌐",
     note: "reload (jamais restart). fullchain + clé.",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
@@ -286,11 +291,29 @@ const TARGET_GUIDES = {
     prepare: ["Créer un token/compte API sur l'appliance + le stocker comme secret."],
     fields: { base_url: "URL de l'API d'upload du cert.", method: "Méthode HTTP (PUT/POST).", cred_ref: "Secret (token/identifiants)." },
     verify: "Vérifie dans l'admin de l'appliance.", gotcha: "Chaque appliance a son API propre : un connecteur dédié reste à écrire pour chacune. Seul ALOHA est implémenté à ce jour." },
-  k8s_secret: { what: "MONITORING seul dans ce lot : cert-manager reste maître de l'émission sur K8s. certfleet surveille l'expiration (via un endpoint monitoré) et pourra faire un rollout ciblé plus tard.",
-    prepare: ["Rien à installer côté certfleet pour la surveillance.", "Pour surveiller le cert servi : ajoute l'URL du service dans l'onglet Monitoring."],
-    fields: { cluster: "Nom du cluster (libellé).", namespace: "Namespace du Secret TLS.", secret: "Nom du Secret TLS (type kubernetes.io/tls)." },
-    verify: "kubectl -n <ns> get secret <secret> -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -enddate",
-    gotcha: "Ne remplace pas cert-manager. Mettre à jour le Secret ne suffit d'ailleurs pas : les pods qui montent le certificat en volume gardent l'ancien tant qu'ils n'ont pas redémarré." },
+  k8s_secret: { what: "Écrit le certificat dans un Secret kubernetes.io/tls du cluster, via l'API, avec un jeton de ServiceAccount. Sert aux certificats émis À L'EXTÉRIEUR du cluster : sur un cluster où cert-manager gère déjà l'émission, laissez-le faire.",
+    prepare: [
+      "Créer un ServiceAccount dédié dans le namespace visé, avec le strict nécessaire. Un jeton par cluster : il se révoque seul, sans toucher aux autres.",
+      "kubectl -n <ns> create serviceaccount certfleet-deployer",
+      "Rôle minimal — écrire LE Secret visé, et redémarrer ce qui le monte. Rien d'autre : ce compte ne doit pas pouvoir lire les autres secrets du namespace.",
+      "kubectl -n <ns> create role certfleet-deployer --verb=get,create,update,patch --resource=secrets --resource-name=<nom-du-secret>",
+      "kubectl -n <ns> create role certfleet-restart --verb=get,patch --resource=deployments,statefulsets,daemonsets",
+      "kubectl -n <ns> create rolebinding certfleet-deployer --role=certfleet-deployer --serviceaccount=<ns>:certfleet-deployer",
+      "kubectl -n <ns> create rolebinding certfleet-restart --role=certfleet-restart --serviceaccount=<ns>:certfleet-deployer",
+      "Obtenir un jeton de durée limitée : kubectl -n <ns> create token certfleet-deployer --duration=8760h",
+      "Récupérer l'autorité du cluster pour ne pas avoir à désactiver la vérification TLS : kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d",
+      "Répéter l'opération dans chaque namespace et sur chaque cluster : une cible par couple (cluster, namespace).",
+    ],
+    fields: { cluster: "Libellé du cluster, pour vous y retrouver dans la liste des cibles.",
+      api_url: "URL du serveur d'API. Ex : https://10.0.0.1:6443",
+      token: "Jeton du ServiceAccount, chiffré au repos et jamais réaffiché.",
+      ca_cert_pem: "Certificat de l'autorité du cluster, en PEM. Le renseigner vaut mieux que désactiver la vérification.",
+      insecure: "Dernier recours si vous n'avez pas la CA. Le trafic reste chiffré, mais l'identité du serveur n'est plus vérifiée.",
+      namespace: "Namespace où écrire le Secret.",
+      secret: "Nom du Secret TLS. S'il existe, il est remplacé ; sinon il est créé.",
+      restart: "Ce qu'il faut redémarrer après la pose, séparé par des virgules. Ex : deployment/front,statefulset/api. Sans préfixe, deployment est supposé." },
+    verify: "kubectl -n <ns> get secret <nom> -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -dates",
+    gotcha: "Un pod qui monte le certificat EN VOLUME garde l'ancien en mémoire jusqu'à son redémarrage : le Secret serait à jour et le service continuerait de servir le certificat périmé. Renseignez le champ « Redémarrages » pour ces cas. Les contrôleurs d'Ingress, eux, relisent le Secret d'eux-mêmes. Ce connecteur ne remplace pas cert-manager : il sert à faire ENTRER dans le cluster un certificat émis ailleurs." },
 };
 
 // ── Schéma (idempotent, additif — schéma public infra-global) ──
@@ -374,7 +397,7 @@ const _str = (v) => (v == null ? null : String(v));
 
 // Petit client HTTP(S) (pour les connecteurs API type ALOHA). Gère le TLS auto-signé
 // via insecure. Retourne { status, headers, text }.
-function _httpRequest(method, urlStr, { headers = {}, body = null, insecure = false, timeout = 20000 } = {}) {
+function _httpRequest(method, urlStr, { headers = {}, body = null, insecure = false, ca = null, timeout = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     let u; try { u = new URL(urlStr); } catch { return reject(new Error("URL invalide: " + urlStr)); }
     const isHttps = u.protocol === "https:";
@@ -384,6 +407,9 @@ function _httpRequest(method, urlStr, { headers = {}, body = null, insecure = fa
       path: u.pathname + u.search, headers: { ...headers }, timeout,
     };
     if (isHttps && insecure) opts.rejectUnauthorized = false;
+    // Autorité interne : la fournir vaut mieux que désactiver la vérification.
+    // Un cluster Kubernetes a presque toujours sa propre CA.
+    if (isHttps && ca) opts.ca = ca;
     const req = lib.request(opts, (r) => {
       const chunks = [];
       r.on("data", (c) => chunks.push(c));
@@ -935,10 +961,91 @@ async function _deployAloha(cert, t, actor) {
   return { deployment_id: dep.id, target: `ALOHA ${base}`, cert_name: certName, hot_update: true, http_status: r.status, reload_id: reloadId };
 }
 
+// ── Connecteur Kubernetes ────────────────────────────────────────────────────
+//
+// Écrit un Secret de type kubernetes.io/tls par appel direct à l'API du
+// cluster, avec un jeton de ServiceAccount. Un jeton par cluster : il se
+// révoque seul, sans toucher aux autres.
+//
+// Le redémarrage n'est pas un supplément d'âme. Un pod qui monte le certificat
+// en volume garde l'ancien en mémoire tant qu'il n'a pas redémarré : le Secret
+// serait à jour et le service continuerait de servir le certificat périmé.
+// Les contrôleurs d'Ingress, eux, relisent le Secret d'eux-mêmes.
+async function _deployK8s(cert, t, actor) {
+  const p = t.params || {};
+  const base = String(p.api_url || "").replace(/\/+$/, "");
+  const ns = String(p.namespace || "").trim();
+  const nom = String(p.secret || "").trim();
+  if (!base || !ns || !nom) throw new Error("URL de l'API, namespace et nom du Secret sont requis");
+
+  const secrets = await _decTargetSecrets(p);
+  const token = secrets.token || "";
+  if (!token) throw new Error("Jeton du ServiceAccount manquant sur la cible");
+
+  const fullchain = [cert.leaf_pem, cert.chain_pem].filter(Boolean).join("\n").trim() + "\n";
+  const keyPem = (await vaultDecrypt(cert.private_key_enc)).trim() + "\n";
+
+  const opts = {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    insecure: !!p.insecure,
+    ca: p.ca_cert_pem ? String(p.ca_cert_pem) : null,
+  };
+  const corps = JSON.stringify({
+    apiVersion: "v1", kind: "Secret", type: "kubernetes.io/tls",
+    metadata: { name: nom, namespace: ns },
+    data: {
+      "tls.crt": Buffer.from(fullchain, "utf8").toString("base64"),
+      "tls.key": Buffer.from(keyPem, "utf8").toString("base64"),
+    },
+  });
+  const chemin = `${base}/api/v1/namespaces/${encodeURIComponent(ns)}/secrets`;
+  const journal = [];
+
+  // On remplace d'abord ; si le Secret n'existe pas encore, on le crée.
+  let r = await _httpRequest("PUT", `${chemin}/${encodeURIComponent(nom)}`,
+    { ...opts, headers: { ...opts.headers, "Content-Type": "application/json" }, body: corps });
+  if (r.status === 404) {
+    journal.push(`Secret ${ns}/${nom} absent — création`);
+    r = await _httpRequest("POST", chemin,
+      { ...opts, headers: { ...opts.headers, "Content-Type": "application/json" }, body: corps });
+  }
+  let ok = r.status >= 200 && r.status < 300;
+  journal.push(`Secret ${ns}/${nom} → HTTP ${r.status}` + (ok ? " (posé)" : " " + r.text.slice(0, 300)));
+
+  // Redémarrages demandés : même annotation que « kubectl rollout restart ».
+  if (ok && String(p.restart || "").trim()) {
+    for (const brut of String(p.restart).split(",").map(x => x.trim()).filter(Boolean)) {
+      const [genre, cible] = brut.includes("/") ? brut.split("/") : ["deployment", brut];
+      const pluriel = { deployment: "deployments", statefulset: "statefulsets", daemonset: "daemonsets" }[genre.toLowerCase()];
+      if (!pluriel) { journal.push(`« ${brut} » ignoré : type inconnu`); continue; }
+      const patch = JSON.stringify({ spec: { template: { metadata: { annotations: {
+        "kubectl.kubernetes.io/restartedAt": new Date().toISOString(),
+      } } } } });
+      const rr = await _httpRequest("PATCH",
+        `${base}/apis/apps/v1/namespaces/${encodeURIComponent(ns)}/${pluriel}/${encodeURIComponent(cible)}`,
+        { ...opts, headers: { ...opts.headers, "Content-Type": "application/strategic-merge-patch+json" }, body: patch });
+      const rok = rr.status >= 200 && rr.status < 300;
+      journal.push(`redémarrage ${genre}/${cible} → HTTP ${rr.status}` + (rok ? "" : " " + rr.text.slice(0, 200)));
+      if (!rok) ok = false;
+    }
+  } else if (ok) {
+    journal.push("aucun redémarrage demandé — les pods qui montent le certificat en volume garderont l'ancien jusqu'à leur prochain démarrage");
+  }
+
+  const log = journal.join(" | ");
+  const dep = (await query(
+    "INSERT INTO cert_deployments (certificate_id, target_id, status, exit_code, log, finished_at) VALUES ($1,$2,$3,$4,$5,now()) RETURNING id",
+    [cert.id, t.id, ok ? "success" : "failed", ok ? 0 : 1, log]
+  )).rows[0];
+  if (!ok) throw new Error(log);
+  return { deployment_id: dep.id, target: `${p.cluster || base} ${ns}/${nom}`, log };
+}
+
 async function _deployToTarget(cert, t, actor) {
   if (!cert.leaf_pem || !cert.private_key_enc) throw new Error("Certificat non émis — émets-le d'abord");
   const typeDef = TARGET_TYPES.find(x => x.type === t.type);
   if (typeDef && typeDef.mode === "api" && t.type === "aloha") return _deployAloha(cert, t, actor);
+  if (typeDef && typeDef.mode === "api" && t.type === "k8s_secret") return _deployK8s(cert, t, actor);
   if (!typeDef || typeDef.mode !== "agent") {
     throw new Error(typeDef?.mode === "api"
       ? `Le connecteur API « ${t.type} » n'est pas implémenté. Seul ALOHA l'est à ce jour.`
