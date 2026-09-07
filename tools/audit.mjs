@@ -154,6 +154,39 @@ if (![...sent].some((k) => !linuxAgent.includes(k) && !winAgent.includes(k))) {
 const kinds = new Set([...certs.matchAll(/kind\)? VALUES.*?'([a-z]+)'/g)].map((m) => m[1]));
 console.log(`  types de commande émis par le hub : ${[...kinds].join(", ") || "cert"}`);
 
+// ── 4 bis. Messages de commit ──
+// L'audit ne regardait que le contenu des fichiers. Un message de commit
+// décrivant un incident réel a suffi à publier des noms de domaine internes
+// dans un dépôt public : le code était propre, le récit ne l'était pas.
+section("4 bis. Messages de commit");
+try {
+  const { execFileSync } = await import("node:child_process");
+  const messages = execFileSync("git", ["log", "--format=%H%x00%B%x01"], { encoding: "utf8" })
+    .split("\x01").map(x => x.trim()).filter(Boolean)
+    .map(x => { const [sha, body] = x.split("\x00"); return { sha: sha.slice(0, 8), body: body || "" }; });
+
+  // Motifs délibérément larges : mieux vaut un faux positif à écarter qu'une
+  // fuite publiée. Un nom d'hôte ou une adresse privée n'a rien à faire dans
+  // le récit d'un projet libre.
+  const MOTIFS = [
+    { re: /\b[a-z0-9-]+\.(local|lan|intra|internal|corp)\b/i, why: "nom de domaine interne" },
+    { re: /\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b/, why: "adresse IP privée" },
+    { re: /\bdns\d+\.[a-z0-9-]+\.[a-z]{2,}\b/i, why: "serveur DNS nommé" },
+    { re: /\b[a-z0-9-]+\.(?:acri|acrist)[a-z-]*\.[a-z]{2,}\b/i, why: "domaine interne connu" },
+  ];
+
+  let trouve = 0;
+  for (const m of messages) {
+    for (const { re, why } of MOTIFS) {
+      const hit = m.body.match(re);
+      if (hit) { bad("commit " + m.sha, 0, why + " : " + hit[0]); trouve++; }
+    }
+  }
+  if (!trouve) ok(messages.length + " message(s) de commit sans référence interne");
+} catch (e) {
+  console.log("  (hors dépôt git ou git indisponible : contrôle ignoré)");
+}
+
 // ── 5. Secrets et fichiers qui ne doivent pas être publiés ──
 section("5. Secrets");
 const secretPat = [
