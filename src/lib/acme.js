@@ -205,8 +205,26 @@ async function dohNegativeTtl(name) {
 // notre propre vérification a vu le TXT, et Let's Encrypt répond NXDOMAIN.
 // Cette combinaison n'a pas d'autre explication, et le message brut ne la donne
 // pas — il coûte des heures de recherche.
-async function expliquerEchecDns(recordName, erreurs, propagationVue) {
+async function expliquerEchecDns(recordName, erreurs, propagationVue, desaccordConstate = null) {
   const brut = JSON.stringify(erreurs);
+
+  // Cas tranché d'avance : le désaccord a été constaté pendant l'attente de
+  // propagation, alors que le TXT existait encore. Aucune raison de
+  // réinterroger le DNS, il ne dirait plus rien d'utile.
+  if (desaccordConstate) {
+    const ns = await dohNameServers(recordName).catch(() => null);
+    return brut + "\n\nDIAGNOSTIC : les résolveurs publics ne sont pas d'accord. "
+      + desaccordConstate.oui.join(", ") + " voi" + (desaccordConstate.oui.length > 1 ? "ent" : "t")
+      + " l'enregistrement, " + desaccordConstate.non.join(", ") + " non. "
+      + "Les serveurs faisant autorité de cette zone ne servent donc pas le même contenu. "
+      + (ns ? `Zone ${ns.zone}, serveurs : ${ns.ns.join(", ")}. Interrogez-les un par un pour repérer celui qui est en retard. ` : "")
+      + "Let's Encrypt valide depuis plusieurs points d'observation : il suffit qu'un seul tombe sur "
+      + "le serveur en retard pour que la validation échoue, et le tirage change à chaque tentative. "
+      + "Attendre n'y changera rien tant que la recopie de zone n'est pas réparée — vérifiez le champ "
+      + "REFRESH du SOA, que le primaire notifie bien ses secondaires, et retirez de la délégation "
+      + "tout serveur qui ne devrait plus servir cette zone.";
+  }
+
   if (!propagationVue || !/NXDOMAIN/i.test(brut)) return brut;
 
   // Deux causes possibles, et elles n'appellent pas la même action.
@@ -255,7 +273,7 @@ async function waitDnsPropagation(name, value, { tries = 20, delay = 6000, log =
       const voient = avis.filter(a => a.valeurs.includes(value));
       if (voient.length === avis.length) {
         log(`TXT ${name} vu par ${avis.map(a => a.nom).join(", ")} (essai ${i + 1})`);
-        return true;
+        return { ok: true, desaccord: null };
       }
       if (voient.length > 0) {
         dernierDesaccord = {
@@ -273,7 +291,9 @@ async function waitDnsPropagation(name, value, { tries = 20, delay = 6000, log =
   } else {
     log(`TXT ${name} non confirmé après ${tries} essais — on tente quand même la validation`);
   }
-  return false;
+  // Le désaccord est RENVOYÉ, pas seulement journalisé : au moment où l'échec
+  // sera rédigé, le TXT aura été retiré et le réinterroger ne dirait plus rien.
+  return { ok: false, desaccord: dernierDesaccord };
 }
 
 // ══════════ Génération de CSR (PKCS#10) en ASN.1/DER — clé RSA-2048 ══════════
@@ -348,11 +368,15 @@ export async function issueCertificate({
     // NXDOMAIN de Let's Encrypt peut tout aussi bien signifier que rien n'a été
     // posé. C'est la conjonction des deux qui désigne le cache négatif.
     const propagationVue = {};
+    // Mémorisé au moment du constat : le TXT n'existera plus quand l'erreur
+    // sera rédigée, et le DNS ne pourra plus rien nous apprendre.
+    const desaccordsConstates = {};
     if (waitDns) {
       for (const [recordName, values] of Object.entries(byName)) {
         for (const v of values) {
-          const vu = await waitDnsPropagation(recordName, v, { log });
-          propagationVue[recordName] = (propagationVue[recordName] !== false) && vu;
+          const r = await waitDnsPropagation(recordName, v, { log });
+          propagationVue[recordName] = (propagationVue[recordName] !== false) && r.ok;
+          if (r.desaccord) desaccordsConstates[recordName] = r.desaccord;
         }
       }
     }
@@ -366,7 +390,8 @@ export async function issueCertificate({
         if (a.status === "valid") { log(`${c.identifier} validé`); ok = true; break; }
         if (a.status === "invalid") {
           const erreurs = a.challenges?.map(x => x.error).filter(Boolean);
-          const detail = await expliquerEchecDns(c.recordName, erreurs, propagationVue[c.recordName] === true);
+          const detail = await expliquerEchecDns(c.recordName, erreurs,
+            propagationVue[c.recordName] === true, desaccordsConstates[c.recordName] || null);
           throw new Error("Validation échouée pour " + c.identifier + " : " + detail);
         }
         await new Promise(r => setTimeout(r, 4000));
