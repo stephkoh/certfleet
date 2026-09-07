@@ -130,6 +130,53 @@ export async function resolveChallengeTarget(name, { hops = 4 } = {}) {
   return cur;
 }
 
+// Interroge le SOA de la zone qui contient `name` et renvoie son champ MINIMUM,
+// c'est-à-dire la durée pendant laquelle un résolveur mémorise qu'un nom
+// N'EXISTE PAS. On remonte les labels jusqu'à trouver une zone qui réponde.
+async function dohNegativeTtl(name) {
+  const labels = String(name).replace(/\.$/, "").split(".");
+  for (let i = 0; i < labels.length - 1; i++) {
+    const zone = labels.slice(i).join(".");
+    for (const base of ["https://dns.google/resolve", "https://cloudflare-dns.com/dns-query"]) {
+      try {
+        const r = await fetch(`${base}?name=${encodeURIComponent(zone)}&type=SOA`,
+          { headers: { accept: "application/dns-json" } });
+        const j = await r.json();
+        const soa = (j.Answer || []).find(a => a.type === 6);
+        if (!soa || !soa.data) continue;
+        // Format : "<ns> <mail> <serial> <refresh> <retry> <expire> <minimum>"
+        const parts = String(soa.data).trim().split(/\s+/);
+        const minimum = Number(parts[parts.length - 1]);
+        if (Number.isFinite(minimum) && minimum > 0) return { zone, minimum };
+      } catch { /* résolveur suivant */ }
+    }
+  }
+  return null;
+}
+
+// Enrichit l'échec de validation quand il porte la signature du cache négatif :
+// notre propre vérification a vu le TXT, et Let's Encrypt répond NXDOMAIN.
+// Cette combinaison n'a pas d'autre explication, et le message brut ne la donne
+// pas — il coûte des heures de recherche.
+async function expliquerEchecDns(recordName, erreurs, propagationVue) {
+  const brut = JSON.stringify(erreurs);
+  if (!propagationVue || !/NXDOMAIN/i.test(brut)) return brut;
+
+  const soa = await dohNegativeTtl(recordName).catch(() => null);
+  const attente = soa
+    ? `Le TTL négatif de la zone ${soa.zone} est de ${soa.minimum} s`
+      + ` (${Math.round(soa.minimum / 60)} min) : réessayez après ce délai,`
+      + ` compté depuis la PREMIÈRE tentative ayant échoué.`
+    : "Réessayez dans quelques heures, le temps que ce cache expire.";
+
+  return brut + "\n\nDIAGNOSTIC : le TXT a bien été posé, et nos résolveurs l'ont vu. "
+    + "Si Let's Encrypt répond malgré tout NXDOMAIN, c'est que SES résolveurs ont mémorisé "
+    + "l'absence du nom lors d'une tentative antérieure, faite avant que la délégation "
+    + "n'existe ou ne soit propagée. " + attente
+    + " Relancer avant l'expiration ne changera rien : chaque essai relit le même cache. "
+    + "Pour éviter cela à l'avenir, abaissez le champ MINIMUM du SOA de cette zone à 300 ou 900 secondes.";
+}
+
 async function waitDnsPropagation(name, value, { tries = 20, delay = 6000, log = () => {} } = {}) {
   for (let i = 0; i < tries; i++) {
     const vals = await dohTxt(name);
@@ -208,7 +255,18 @@ export async function issueCertificate({
       placed.push({ recordName });
     }
     // 3) Attente de propagation (chaque valeur visible publiquement)
-    if (waitDns) for (const [recordName, values] of Object.entries(byName)) for (const v of values) await waitDnsPropagation(recordName, v, { log });
+    // On retient si la propagation a été CONFIRMÉE : sans cette information, un
+    // NXDOMAIN de Let's Encrypt peut tout aussi bien signifier que rien n'a été
+    // posé. C'est la conjonction des deux qui désigne le cache négatif.
+    const propagationVue = {};
+    if (waitDns) {
+      for (const [recordName, values] of Object.entries(byName)) {
+        for (const v of values) {
+          const vu = await waitDnsPropagation(recordName, v, { log });
+          propagationVue[recordName] = (propagationVue[recordName] !== false) && vu;
+        }
+      }
+    }
     // 4) Déclenche toutes les validations
     for (const c of chs) await client.completeChallenge(c.chUrl);
     // 5) Attend que CHAQUE autorisation devienne valide
@@ -217,7 +275,11 @@ export async function issueCertificate({
       for (let i = 0; i < 40; i++) {
         const a = await client.fetchUrl(c.authzUrl);
         if (a.status === "valid") { log(`${c.identifier} validé`); ok = true; break; }
-        if (a.status === "invalid") throw new Error("Validation échouée pour " + c.identifier + " : " + JSON.stringify(a.challenges?.map(x => x.error).filter(Boolean)));
+        if (a.status === "invalid") {
+          const erreurs = a.challenges?.map(x => x.error).filter(Boolean);
+          const detail = await expliquerEchecDns(c.recordName, erreurs, propagationVue[c.recordName] === true);
+          throw new Error("Validation échouée pour " + c.identifier + " : " + detail);
+        }
         await new Promise(r => setTimeout(r, 4000));
       }
       if (!ok) throw new Error("Timeout de validation pour " + c.identifier);
