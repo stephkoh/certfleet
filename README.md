@@ -251,3 +251,12 @@ lève cette obligation : voir [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 Le projet est développé sur du temps personnel. Si certfleet vous fait gagner du temps,
 le bouton **Sponsor** en haut de cette page finance sa maintenance — notamment le suivi
 des évolutions ACME et l'ajout de connecteurs.
+
+## Contribuer
+
+Les contributions sont bienvenues, en particulier les connecteurs manquants et les
+retours de terrain sur les types marqués « à valider ». La marche à suivre et
+l'accord de contribution — nécessaire pour que le projet reste publié sous les
+deux licences — sont dans [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Le journal des versions est dans [CHANGELOG.md](CHANGELOG.md).

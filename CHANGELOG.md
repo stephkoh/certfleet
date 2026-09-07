@@ -13,6 +13,13 @@ tête de section.
 
 ## [Non publié]
 
+### Ajouté
+
+- `CONTRIBUTING.md` : accord de contribution permettant au projet de rester
+  publié à la fois sous AGPL-3.0 et sous licence commerciale, et guide pratique
+  pour proposer un correctif ou un connecteur.
+- Gabarit de pull request rappelant les vérifications attendues et l'accord.
+
 ## [0.1.0] — 2026-09-07
 
 Première version publique, extraite d'un module existant et remise à plat pour
