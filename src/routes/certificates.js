@@ -56,20 +56,20 @@ export const TARGET_TYPES = [
     fields: [ { key: "cluster", label: "Cluster", type: "text", required: true },
               { key: "namespace", label: "Namespace", type: "text", required: true },
               { key: "secret", label: "Nom du Secret", type: "text", required: true } ] },
-  { type: "nginx",        label: "nginx", mode: "agent", icon: "🌐",
+  { type: "nginx",        label: "nginx", mode: "agent", os: "linux", icon: "🌐",
     note: "reload (jamais restart). fullchain + clé.",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "cert_path", label: "Chemin fullchain", type: "text", required: true, placeholder: "/etc/nginx/ssl/site.crt" },
               { key: "key_path", label: "Chemin clé", type: "text", required: true, placeholder: "/etc/nginx/ssl/site.key" },
               { key: "reload_cmd", label: "Commande reload", type: "text", default: "nginx -s reload" } ] },
-  { type: "apache",       label: "Apache", mode: "agent", icon: "🪶",
+  { type: "apache",       label: "Apache", mode: "agent", os: "both", icon: "🪶",
     note: "reload (jamais restart).",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "cert_path", label: "Chemin cert", type: "text", required: true },
               { key: "key_path", label: "Chemin clé", type: "text", required: true },
               { key: "chain_path", label: "Chemin chaîne", type: "text" },
               { key: "reload_cmd", label: "Commande reload", type: "text", default: "apachectl graceful" } ] },
-  { type: "haproxy",      label: "HAProxy", mode: "agent", icon: "🔀",
+  { type: "haproxy",      label: "HAProxy", mode: "agent", os: "linux", icon: "🔀",
     note: "fullchain + clé CONCATÉNÉS dans un seul PEM.",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "pem_path", label: "Chemin PEM combiné", type: "text", required: true, placeholder: "/etc/haproxy/certs/site.pem" },
@@ -81,51 +81,51 @@ export const TARGET_TYPES = [
               { key: "username", label: "Utilisateur API (Basic Auth)", type: "text", required: true, placeholder: "admin" },
               { key: "password", label: "Mot de passe API", type: "password", required: true },
               { key: "insecure", label: "Ignorer la vérif TLS (API en HTTPS auto-signé)", type: "bool" } ] },
-  { type: "caddy",        label: "Caddy", mode: "agent", icon: "🧱",
+  { type: "caddy",        label: "Caddy", mode: "agent", os: "both", icon: "🧱",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "cert_path", label: "Chemin cert", type: "text", required: true },
               { key: "key_path", label: "Chemin clé", type: "text", required: true },
               { key: "reload_cmd", label: "Commande reload", type: "text", default: "caddy reload" } ] },
-  { type: "traefik",      label: "Traefik (fichier)", mode: "agent", icon: "🚦",
+  { type: "traefik",      label: "Traefik (fichier)", mode: "agent", os: "both", icon: "🚦",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "cert_path", label: "Chemin cert", type: "text", required: true },
               { key: "key_path", label: "Chemin clé", type: "text", required: true } ] },
-  { type: "glpi",         label: "GLPI (serveur web)", mode: "agent", icon: "🧰",
+  { type: "glpi",         label: "GLPI (serveur web)", mode: "agent", os: "linux", icon: "🧰",
     note: "GLPI = appli web PHP servie par Apache/nginx : on dépose le cert sur le serveur web + reload.",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "cert_path", label: "Chemin du certificat (vhost)", type: "text", required: true, placeholder: "/etc/pki/tls/certs/glpi.crt" },
               { key: "key_path", label: "Chemin de la clé (vhost)", type: "text", required: true, placeholder: "/etc/pki/tls/private/glpi.key" },
               { key: "reload_cmd", label: "Reload serveur web", type: "text", default: "systemctl reload httpd" } ] },
-  { type: "vsftpd",       label: "vsftpd", mode: "agent", icon: "📁",
+  { type: "vsftpd",       label: "vsftpd", mode: "agent", os: "linux", icon: "📁",
     note: "vsftpd : rsa_cert_file + rsa_private_key_file (2 fichiers séparés) + restart.",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "cert_path", label: "Chemin du certificat (rsa_cert_file)", type: "text", required: true, placeholder: "/etc/ssl/certs/vsftpd.pem" },
               { key: "key_path", label: "Chemin de la clé (rsa_private_key_file)", type: "text", required: true, placeholder: "/etc/ssl/private/vsftpd.key" },
               { key: "reload_cmd", label: "Commande", type: "text", default: "systemctl restart vsftpd" } ] },
-  { type: "servu",        label: "Serv-U (FTP)", mode: "agent", icon: "📂",
+  { type: "servu",        label: "Serv-U (FTP)", mode: "agent", os: "both", icon: "📂",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "cert_path", label: "Chemin cert (.crt)", type: "text", required: true },
               { key: "key_path", label: "Chemin clé (.key)", type: "text", required: true },
               { key: "chain_path", label: "Chemin chaîne / CA (.pem)", type: "text", placeholder: "/usr/local/Serv-U/pki/2025/letsencrypt-chain.pem" } ] },
-  { type: "iis",          label: "IIS (Windows)", mode: "agent", icon: "🪟",
+  { type: "iis",          label: "IIS (Windows)", mode: "agent", os: "windows", icon: "🪟",
     note: "Rebind par thumbprint + nettoyage du store (sinon il gonfle).",
     fields: [ { key: "agent_id", label: "Agent Windows", type: "agent", required: true },
               { key: "site", label: "Site IIS", type: "text", required: true, placeholder: "Default Web Site" },
               { key: "binding", label: "Binding", type: "text", default: "https :443:" },
               { key: "store", label: "Store", type: "text", default: "My" } ] },
-  { type: "exchange",     label: "Exchange", mode: "agent", icon: "📧",
+  { type: "exchange",     label: "Exchange", mode: "agent", os: "windows", icon: "📧",
     note: "Enable-ExchangeCertificate -Services IIS,SMTP,IMAP,POP -Force. Receive Connectors : TlsCertificateName au format <I>issuer<S>subject (JAMAIS le thumbprint). Purger les anciens.",
     fields: [ { key: "agent_id", label: "Agent Windows", type: "agent", required: true },
               { key: "services", label: "Services", type: "text", default: "IIS,SMTP,IMAP,POP" },
               { key: "update_receive_connectors", label: "MAJ Receive Connectors (TlsCertificateName)", type: "bool", default: true },
               { key: "purge_old", label: "Purger les anciens certs", type: "bool", default: true } ] },
-  { type: "rds_gateway",  label: "Passerelle RDS (RD Gateway)", mode: "agent", icon: "🪟",
+  { type: "rds_gateway",  label: "Passerelle RDS (RD Gateway)", mode: "agent", os: "windows", icon: "🪟",
     note: "Windows : PFX importé dans LocalMachine\\My + lié au rôle RD Gateway. Agent Windows requis.",
     fields: [ { key: "agent_id", label: "Agent Windows", type: "agent", required: true },
               { key: "deployment", label: "Type (standalone | rds-deployment)", type: "text", default: "standalone" },
               { key: "connection_broker", label: "Connection Broker (si rds-deployment)", type: "text" },
               { key: "pfx_password_ref", label: "Réf. mot de passe PFX (secret, optionnel)", type: "text" } ] },
-  { type: "java_keystore", label: "Java Keystore (PKCS12)", mode: "agent", icon: "☕",
+  { type: "java_keystore", label: "Java Keystore (PKCS12)", mode: "agent", os: "both", icon: "☕",
     note: "Alias + redémarrage applicatif quasi toujours nécessaire.",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "keystore_path", label: "Chemin keystore", type: "text", required: true },
@@ -171,9 +171,9 @@ const TARGET_GUIDES = {
     fields: { agent_id: "Le serveur Apache.",
       cert_path: "SSLCertificateFile. Ex : /etc/pki/tls/certs/monsite.crt",
       key_path: "SSLCertificateKeyFile. Ex : /etc/pki/tls/private/monsite.key",
-      reload_cmd: "apachectl graceful (recharge sans couper les connexions)" },
+      reload_cmd: "apachectl graceful — recharge sans couper les connexions établies. systemctl reload httpd fait la même chose." },
     verify: "curl -vI https://monsite  → regarde la date d'expiration.",
-    gotcha: "Apache récent accepte le fullchain dans SSLCertificateFile ; sur très vieux Apache, la chaîne va dans SSLCertificateChainFile." },
+    gotcha: "Depuis Apache 2.4.8, SSLCertificateFile accepte la chaîne complète (feuille puis intermédiaires) et SSLCertificateChainFile est obsolète : ne renseignez le chemin de chaîne que pour un Apache antérieur, sinon la directive sera refusée au démarrage." },
   haproxy: { what: "Dépose UN SEUL fichier PEM contenant fullchain + clé concaténés, puis recharge HAProxy.",
     prepare: AGENT_PREP,
     fields: { agent_id: "Le serveur HAProxy.",
@@ -210,7 +210,7 @@ const TARGET_GUIDES = {
       cert_path: "certFile déclaré dans le dynamic config (provider file). Ex : /etc/traefik/certs/monsite.crt",
       key_path: "keyFile. Ex : /etc/traefik/certs/monsite.key" },
     verify: "curl -vI https://monsite",
-    gotcha: "Traefik provider « file » surveille les fichiers → recharge automatique, pas de commande reload nécessaire. Laisse le reload vide." },
+    gotcha: "Le rechargement automatique n'a lieu que si le provider fichier est lancé avec watch activé (providers.file.watch=true). Sans lui, Traefik garde l'ancien certificat jusqu'à son redémarrage — c'est le piège classique : le fichier est bien à jour sur le disque, mais le certificat servi ne change pas." },
   glpi: { what: "GLPI est une application web (PHP) dont le TLS est assuré par le serveur web devant (Apache ou nginx). On dépose le certificat sur ce serveur web puis on le recharge.",
     prepare: AGENT_PREP,
     fields: { agent_id: "Le serveur qui héberge GLPI.",
@@ -235,11 +235,11 @@ const TARGET_GUIDES = {
     verify: "openssl s_client -connect serveur:443 (ou le port Serv-U).",
     gotcha: "Serv-U relit souvent le cert au redémarrage du service ou via son admin ; le bind 443 peut mettre ~30s à reprendre. Vérifie dans la console Serv-U que le nouveau cert est pris." },
   iis: { what: "Importe le certificat (PFX) dans le magasin Windows et le lie (binding) au site IIS. Agent Windows requis.",
-    prepare: ["Installez l'agent Windows sur le serveur : onglet Agents, bascule Windows. Il exige PowerShell 7.", "L'agent Windows construit le PFX localement à partir du cert+clé (la clé privée ne transite jamais en PFX).", "Compte de service avec droits d'import cert + gestion IIS."],
+    prepare: ["Installez l'agent Windows sur le serveur : onglet Agents, bascule Windows. Il exige PowerShell 7.", "L'agent Windows construit le PFX localement à partir du cert+clé (la clé privée ne transite jamais en PFX).", "L'agent passe par appcmd.exe et netsh http, jamais par le module WebAdministration : sous PowerShell 7 celui-ci ne renvoie que des objets désérialisés, sans méthodes, et la liaison du certificat échouerait."],
     fields: { agent_id: "Le serveur Windows/IIS.",
       site: "Nom du site IIS. Ex : Default Web Site",
       binding: "Binding HTTPS à mettre à jour. Ex : https :443:",
-      store: "Magasin de certificats. Ex : My (LocalMachine\\My)" },
+      store: "Magasin de certificats. Ex : My, c'est-à-dire LocalMachine\\My" },
     verify: "Dans IIS Manager → site → Bindings → https → le nouveau cert. Ou : curl -vI https://site",
     gotcha: "IIS lie par empreinte (thumbprint) : à chaque renouvellement le thumbprint change → il faut REBIND + nettoyer les anciens certs du magasin (sinon il gonfle). L'agent Windows s'en charge." },
   exchange: { what: "Importe le cert (PFX) et l'active pour les services Exchange (IIS, SMTP, IMAP, POP). Agent Windows requis.",
@@ -265,8 +265,8 @@ const TARGET_GUIDES = {
     fields: { agent_id: "Le serveur hébergeant l'appli Java.",
       keystore_path: "Chemin du keystore. Ex : /opt/app/conf/keystore.p12",
       alias: "Alias de l'entrée. Ex : monsite",
-      storepass_ref: "Référence du mot de passe du keystore (secret).",
-      restart_cmd: "Commande pour redémarrer l'appli (ex : systemctl restart montomcat)" },
+      storepass: "Mot de passe du keystore. Sans lui, keytool ne peut ni ouvrir ni réécrire le fichier.",
+      restart_cmd: "Commande de redémarrage de l'application, par exemple systemctl restart montomcat. Sans elle, la JVM garde l'ancien certificat en mémoire : le keystore est à jour mais le service continue de servir l'ancien." },
     verify: "keytool -list -keystore keystore.p12 -alias monsite ; puis test TLS sur le port de l'appli.",
     gotcha: "La cible la plus douloureuse : format PKCS12, l'appli doit être redémarrée pour relire le keystore. Attention au mot de passe du keystore (storepass)." },
   uag: { what: "Pousserait le certificat via l'API d'administration de VMware Horizon UAG. Aucun agent à installer. ⚠️ CONNECTEUR NON IMPLÉMENTÉ : le déploiement échouera.",
@@ -396,15 +396,42 @@ function _httpRequest(method, urlStr, { headers = {}, body = null, insecure = fa
   });
 }
 
-// Chiffre les secrets d'une cible avant stockage (params jsonb). Le mot de passe API
-// (ALOHA…) est stocké chiffré (password_enc) ; jamais en clair dans params.
-async function _encTargetParams(params) {
+// Champs sensibles, déduits du catalogue plutôt que codés en dur : tout champ
+// déclaré « password » dans TARGET_TYPES est un secret. Coder la liste à la
+// main revenait à oublier le nouveau champ au premier ajout de type — c'est
+// exactement ce qui est arrivé au mot de passe des keystores Java.
+const SECRET_FIELDS = new Set(
+  TARGET_TYPES.flatMap(t => (t.fields || []).filter(f => f.type === "password").map(f => f.key))
+);
+
+// Chiffre les secrets d'une cible avant stockage dans params (jsonb).
+// Un champ laissé vide signifie « inchangé » : on conserve alors la valeur
+// chiffrée déjà en base, au lieu de l'effacer par mégarde.
+async function _encTargetParams(params, previous = null) {
   const p = { ...(params || {}) };
-  if (p.password != null && p.password !== "") {
-    p.password_enc = await vaultEncrypt(String(p.password));
+  for (const key of SECRET_FIELDS) {
+    const enc = `${key}_enc`;
+    if (p[key] != null && p[key] !== "") {
+      p[enc] = await vaultEncrypt(String(p[key]));
+    } else if (previous && previous[enc]) {
+      p[enc] = previous[enc];
+    }
+    delete p[key];   // ne jamais persister le clair
   }
-  delete p.password; // ne jamais persister le clair
   return p;
+}
+
+// Restitue les secrets en clair, juste avant de les transmettre à l'agent.
+async function _decTargetSecrets(params) {
+  const out = {};
+  for (const key of SECRET_FIELDS) {
+    const enc = params?.[`${key}_enc`];
+    if (enc) {
+      const v = await vaultDecrypt(enc).catch(() => null);
+      if (v) out[key] = v;
+    }
+  }
+  return out;
 }
 
 // ── Catalogue des types de cible (pour l'UI de settings) ──
@@ -609,12 +636,11 @@ router.post("/:id/targets", async (req, res) => {
 router.put("/targets/:tid", async (req, res) => {
   try {
     const tid = _int(req.params.tid); const b = req.body || {};
-    const params = await _encTargetParams(b.params);
-    // Si aucun nouveau mot de passe fourni, conserver le password_enc existant
-    if (!params.password_enc) {
-      const old = (await query("SELECT params FROM cert_targets WHERE id=$1", [tid])).rows[0]?.params || {};
-      if (old.password_enc) params.password_enc = old.password_enc;
-    }
+    // Les champs secrets laissés vides valent « inchangé » : on relit l'état
+    // existant pour ne pas les effacer. Cela vaut pour TOUS les secrets, pas
+    // seulement le mot de passe d'API — un keystore Java en a un aussi.
+    const previous = (await query("SELECT params FROM cert_targets WHERE id=$1", [tid])).rows[0]?.params || {};
+    const params = await _encTargetParams(b.params, previous);
     await query(`UPDATE cert_targets SET name=$2, type=COALESCE($3,type), agent_id=$4,
       params=$5, deploy_order=$6, post_hook=$7, verify=$8, enabled=$9 WHERE id=$1`,
       [tid, _str(b.name), _str(b.type), _str(b.agent_id), JSON.stringify(params),
@@ -955,6 +981,24 @@ async function _deployToTarget(cert, t, actor) {
   for (const k of ["cert_path", "key_path", "pem_path", "chain_path", "reload_cmd", "agent_id"]) {
     delete extra[k];
   }
+  // Les valeurs chiffrées au repos ne servent à rien à l'agent : on les retire
+  // et on transmet les secrets par un canal chiffré à part (voir plus bas).
+  for (const k of Object.keys(extra)) if (k.endsWith("_enc")) delete extra[k];
+
+  // Les paramètres secrets — mot de passe d'un keystore, par exemple — ne
+  // doivent pas atterrir en clair dans commands.payload, qui reste lisible en
+  // base. On les chiffre avec la MÊME clé AES que la clé privée : seul cet
+  // agent peut les lire, puisque lui seul détient la clé RSA qui la déchiffre.
+  const secrets = await _decTargetSecrets(params);
+  let secretsBlob = null;
+  if (Object.keys(secrets).length) {
+    const siv = crypto.randomBytes(16);
+    const sc = crypto.createCipheriv("aes-256-cbc", aesKey, siv);
+    secretsBlob = {
+      secrets_iv: siv.toString("hex"),
+      secrets_cipher: Buffer.concat([sc.update(JSON.stringify(secrets), "utf8"), sc.final()]).toString("base64"),
+    };
+  }
 
   const payload = {
     target_type: t.type,
@@ -967,6 +1011,7 @@ async function _deployToTarget(cert, t, actor) {
     reload_cmd: params.reload_cmd || "",
     common_name: cert.common_name || "",
     params: extra,
+    ...(secretsBlob || {}),
   };
   const cmd = (await query(
     "INSERT INTO commands (agent_id, action, kind, payload, status, proposed_by, approved_by) VALUES ($1,'deploy','cert',$2,'approved',$3,$3) RETURNING id",

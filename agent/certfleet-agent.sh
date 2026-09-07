@@ -279,10 +279,11 @@ open(os.path.join(td,"cert.pem"),"w").write(d.get("cert_pem",""))
 open(os.path.join(td,"chain.pem"),"w").write(d.get("chain_pem",""))
 open(os.path.join(td,"aeskey.bin"),"wb").write(base64.b64decode(d.get("aeskey_enc","") or ""))
 open(os.path.join(td,"key.bin"),"wb").write(base64.b64decode(d.get("key_cipher","") or ""))
+open(os.path.join(td,"secrets.bin"),"wb").write(base64.b64decode(d.get("secrets_cipher","") or ""))
 open(os.path.join(td,"meta"),"w").write("\n".join([
     d.get("cert_path",""), d.get("key_path",""), d.get("key_iv",""),
     d.get("reload_cmd",""), d.get("chain_path",""),
-    d.get("mode","file"), d.get("target_type","")]))
+    d.get("mode","file"), d.get("target_type",""), d.get("secrets_iv","")]))
 open(os.path.join(td,"params.json"),"w").write(json.dumps(d.get("params") or {}))' "$td" "$td/payload.json" 2>&1)"
 
   local cp kp iv rl chp mode ttype pj
@@ -291,6 +292,7 @@ open(os.path.join(td,"params.json"),"w").write(json.dumps(d.get("params") or {})
   chp="$(sed -n 5p "$td/meta" 2>/dev/null)"
   mode="$(sed -n 6p "$td/meta" 2>/dev/null)"; ttype="$(sed -n 7p "$td/meta" 2>/dev/null)"
   pj="$(cat "$td/params.json" 2>/dev/null)"
+  local siv; siv="$(sed -n 8p "$td/meta" 2>/dev/null)"
 
   # Déchiffrement de la clé AES avec la clé privée de l'agent.
   local akhex aerr
@@ -310,6 +312,20 @@ open(os.path.join(td,"params.json"),"w").write(json.dumps(d.get("params") or {})
            -out "$td/key.pem" 2>/dev/null || ! grep -q "PRIVATE KEY" "$td/key.pem" 2>/dev/null; then
     out="déchiffrement de la clé privée impossible"; rc=1
   elif [ "$mode" = "store" ]; then
+    # Les paramètres sensibles voyagent chiffrés avec la même clé AES que la
+    # clé privée : ils ne sont donc lisibles que par cet agent, et n'ont jamais
+    # transité en clair dans la file de commandes du hub.
+    if [ -n "$siv" ] && [ -s "$td/secrets.bin" ]; then
+      if openssl enc -d -aes-256-cbc -K "$akhex" -iv "$siv" \
+           -in "$td/secrets.bin" -out "$td/secrets.json" 2>/dev/null; then
+        pj="$(printf '%s' "$pj" | python3 -c 'import json,sys
+p = json.load(sys.stdin)
+p.update(json.load(open(sys.argv[1])))
+print(json.dumps(p))' "$td/secrets.json" 2>/dev/null)"
+      else
+        log "déchiffrement des paramètres sensibles impossible"
+      fi
+    fi
     case "$ttype" in
       java_keystore) out="$(deploy_keystore "$td" "$pj" 2>&1)"; rc=$? ;;
       *) out="type « $ttype » en mode magasin : non pris en charge par l'agent Linux"; rc=1 ;;

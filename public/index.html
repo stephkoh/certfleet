@@ -295,7 +295,7 @@ visudo -cf /etc/sudoers.d/certfleet-cert-install    # doit répondre : … parse
       <h3>📡 Supervision & contrôle</h3>
       <div class="tt-field">• <b>Sonde TLS externe</b> : rouvre une vraie connexion et compare le <b>SHA-256</b> du certificat réellement servi (≠ lire la base) → détecte les copies périmées.</div>
       <div class="tt-field">• Détection <b>flapping</b> : plusieurs sondes comparées → alerte si un endpoint sert des certificats incohérents (replica/copie obsolète).</div>
-      <div class="tt-field">• Workflow d'<b>approbation</b> des commandes d'agent (garde-fou côté canal ADM).</div>
+      <div class="tt-field">• Les commandes envoyées aux agents sont <b>tracées</b> et leur résultat conservé : on sait qui a déployé quoi, où, et avec quel retour.</div>
       <div class="tt-field">• Historique des émissions/déploiements + logs conservés par certificat.</div>
     </div>
 
@@ -405,19 +405,24 @@ function guideHtml(t){
     ${fh?`<div style="font-weight:700">📝 Champs à remplir</div><div style="margin:4px 0 8px">${fh}</div>`:''}
     ${g.verify?`<div style="font-weight:700">✅ Vérifier ensuite</div><div class="mono" style="margin:2px 0 8px;font-size:11px;white-space:pre-wrap">${esc(g.verify)}</div>`:''}
     ${g.gotcha?`<div class="tt-note" style="margin:0">⚠️ ${esc(g.gotcha)}</div>`:''}
-    ${t.mode==='agent'?`<div style="margin-top:8px"><b>🖥️ Commandes serveur (en root) — helper + sudoers</b> :
+    ${(t.mode==='agent'&&t.os!=='windows')?`<div style="margin-top:8px"><b>🐧 Sur un serveur Linux — helper root et sudoers</b> :
       <pre style="background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:11px;overflow:auto;white-space:pre-wrap;margin-top:4px"># 1) installer le helper root
-curl -fsSL https://votre-hub/api/agents/cert-install.sh -o /usr/local/bin/certfleet-cert-install
+curl -fsSL ${location.origin}/api/agents/cert-install.sh -o /usr/local/bin/certfleet-cert-install
 chmod 0755 /usr/local/bin/certfleet-cert-install
 chown root:root /usr/local/bin/certfleet-cert-install
 
-# 2) creer /etc/sudoers.d/certfleet-cert-install avec EXACTEMENT cette ligne :
-srv_certfleet-agent ALL=(root) NOPASSWD: /usr/local/bin/certfleet-cert-install
+# 2) uniquement si l'agent tourne sous un compte de service, et non en root :
+#    creer /etc/sudoers.d/certfleet-cert-install avec cette seule ligne
+certfleet ALL=(root) NOPASSWD: /usr/local/bin/certfleet-cert-install
 
-# 3) permissions + validation
+# 3) permissions et validation de la syntaxe
 chmod 0440 /etc/sudoers.d/certfleet-cert-install
 visudo -cf /etc/sudoers.d/certfleet-cert-install</pre>
-      <div class="muted" style="font-size:10.5px">💡 Plus simple : relancez l'installateur depuis l'onglet <b>Agents</b> — <span class="mono">install.sh</span> pose le helper + le sudoers automatiquement. Remplace <span class="mono">srv_certfleet-agent</span> par le compte de service de ton agent s'il diffère.</div></div>`:''}
+      <div class="muted" style="font-size:10.5px">💡 Rien de tout cela n'est nécessaire si vous utilisez l'installateur de l'onglet <b>Agents</b> : il pose l'agent et le helper d'un seul coup. Remplacez <span class="mono">certfleet</span> par le compte qui exécute l'agent.</div></div>`:''}
+    ${(t.mode==='agent'&&t.os==='windows')?`<div style="margin-top:8px"><b>🪟 Sur un serveur Windows</b> :
+      <div class="muted" style="font-size:11.5px;line-height:1.65;margin-top:4px">Ni helper root, ni <span class="mono">sudoers</span> : ce sont des notions Unix. L'agent Windows tourne en <b>SYSTEM</b> via une tâche planifiée, ce qui lui suffit pour écrire dans le magasin <span class="mono">LocalMachine\\My</span> et lier le certificat au service.
+      <br>Installez-le depuis l'onglet <b>Agents</b>, bascule <b>Windows</b>. Il exige <b>PowerShell 7</b> — <span class="mono">winget install Microsoft.PowerShell</span>.</div></div>`:''}
+    ${(t.mode==='agent'&&t.os==='both')?`<div class="muted" style="font-size:10.5px;margin-top:6px">↳ Ce logiciel existe sous Linux comme sous Windows : installez l'agent correspondant au système du serveur cible.</div>`:''}
   </div>`;
 }
 function barColor(days){if(days==null)return '#cbd5e1';if(days<0)return 'var(--cm-red)';if(days<=7)return '#ea580c';if(days<=21)return 'var(--cm-amber)';if(days<=45)return '#65a30d';return 'var(--cm-green)';}
@@ -530,7 +535,7 @@ function renderTypes(){
       ${t.status?.tested?`<div class="tt-note" style="color:#166534;background:#dcfce7">✅ <b>Testé</b> — utilisable par l'équipe. Validé par <b>${esc(t.status.tested_by||'?')}</b>${t.status.tested_at?` le ${new Date(t.status.tested_at).toLocaleDateString('fr-FR')}`:''}${t.status.note?`<br><span class="muted">« ${esc(t.status.note)} »</span>`:''}</div>`:''}
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:6px 0;cursor:pointer"><input type="checkbox" ${t.status?.tested?'checked':''} onclick="toggleTypeTested('${t.type}',this.checked,this)"> Marquer ce type comme <b>testé</b> (visible par l'équipe)</label>
       ${t.note?`<div class="tt-note">${esc(t.note)}</div>`:''}
-      ${t.mode==='agent'?`<div class="tt-note" style="color:#1e40af;background:#e0edff">🔧 Cible <b>agent</b> — nécessite l'agent natif + helper + sudoers (voir « <b>Prérequis cible agent</b> » en haut de cet onglet).</div>`:''}
+      ${t.mode==='agent'?`<div class="tt-note" style="color:#1e40af;background:#e0edff">🔧 Cible <b>agent</b> — nécessite l'agent certfleet installé sur le serveur, plus le helper et sa règle sudoers (voir « <b>Prérequis d'une cible agent</b> » en haut de cet onglet).</div>`:''}
       ${t.mode==='api'?`<div class="tt-note" style="color:#92400e;background:#fffbeb">🔌 <b>Connecteur API</b> — aucun agent à installer : certfleet appelle directement l'API de l'appliance. ${t.type==='aloha'?'Implémenté.':'⚠️ Non implémenté à ce jour : le déploiement échouera.'}</div>`:''}
       ${t.mode==='k8s'?`<div class="tt-note" style="color:#6d28d9;background:#f3e8ff">☸️ <b>Monitoring seul</b> — cert-manager reste maître de l'émission ; certfleet supervise.</div>`:''}
       <div style="margin-top:6px">${(t.fields||[]).map(f=>`<div class="tt-field">• <b>${esc(f.label)}</b> <span class="muted">(${f.type}${f.required?', requis':''})</span></div>`).join('')}</div>
