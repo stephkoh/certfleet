@@ -618,7 +618,7 @@ async function deployFromOverview(tid,btn){
   try{
     const r=await api('/targets/'+tid+'/deploy',{method:'POST',body:{}});
     toast('Déploiement envoyé à '+(r.agent_id||'l\'agent')+' — exécution au prochain passage','ok');
-    let n=0; const iv=setInterval(async()=>{ n++; try{ DEPLOYS=await api('/deployments/overview'); renderDeployOverview(); }catch{} if(n>=12) clearInterval(iv); }, 15000);
+    let n=0; const iv=setInterval(async()=>{ n++; if(saisieEnCours()) return; try{ DEPLOYS=await api('/deployments/overview'); renderDeployOverview(); }catch{} if(n>=12) clearInterval(iv); }, 15000);
   }catch(e){ toast('Erreur : '+e.message,'err'); }
   finally{ btn.disabled=false; btn.textContent=o; }
 }
@@ -709,6 +709,24 @@ async function openDetail(id){
   document.getElementById('detTitle').textContent=(detData.friendly_name||detData.common_name);
   renderDetail();document.getElementById('detailModal').classList.add('open');
 }
+// Rafraîchissement manuel : l'automatique s'efface devant une saisie en cours,
+// donc l'utilisateur doit pouvoir demander la mise à jour lui-même.
+async function rafraichirDetail(btn){
+  const o = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Actualisation…'; }
+  try {
+    detData = await api('/' + detId);
+    renderDetail();
+    toast('Détail actualisé', 'ok');
+  } catch (e) {
+    toast('Erreur : ' + e.message, 'err');
+  } finally {
+    // renderDetail() a reconstruit le panneau : le bouton d'origine n'existe
+    // plus, inutile de le restaurer s'il a disparu du document.
+    if (btn && document.body.contains(btn)) { btn.disabled = false; btn.innerHTML = o; }
+  }
+}
+
 function renderDetail(){
   const c=detData;
   const tgts=c.targets||[];
@@ -719,7 +737,10 @@ function renderDetail(){
       <div><div class="muted">Expiration</div><b>${fmtDate(c.not_after)}</b></div>
       <div><div class="muted">Renouvellement</div>${c.auto_renew?'<span class="badge b-ok">auto</span>':'<span class="badge b-unk">manuel</span>'} ${esc(c.policy_ca||'')} ${c.renew_before_pct||33}% <button class="btn btn-sm" style="margin-left:6px" onclick="toggleAuto(${c.auto_renew?0:1},this)" title="Active/désactive le renouvellement automatique (cron : ré-émet au seuil % + redéploie sur les agents + reload)">${c.auto_renew?'⏸ Désactiver auto':'▶️ Activer auto'}</button></div>
     </div>
-    <div class="muted mono" style="margin-top:8px">${(c.domains||[]).map(d=>esc(d.domain||d)).join(', ')}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+      <div class="muted mono">${(c.domains||[]).map(d=>esc(d.domain||d)).join(', ')}</div>
+      <button class="btn btn-sm" onclick="rafraichirDetail(this)" title="Recharger l'état de ce certificat, de ses cibles et de ses déploiements">🔄 Actualiser</button>
+    </div>
 
     <div class="card" style="background:var(--cm-bg);margin-top:12px">
       <h3>🔏 Émission / renouvellement ACME <span class="muted" style="font-weight:400">(DNS-01 via Gandi)</span></h3>
@@ -800,6 +821,21 @@ async function alohaList(){
 // Édition d'une cible existante : on réutilise le formulaire d'ajout (les champs
 // sont rendus dynamiquement depuis /target-types) et on bascule sur PUT /targets/:id.
 let editingTargetId = null;
+
+// Un rafraîchissement automatique qui reconstruit le panneau efface ce que
+// l'utilisateur est en train de taper. On considère qu'il y a saisie en cours
+// dès qu'un formulaire est ouvert ou qu'un champ a le focus — le rafraîchissement
+// attend alors le tour suivant plutôt que de détruire le travail en cours.
+function saisieEnCours(){
+  if (editingTargetId) return true;
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+  // Un formulaire visible dont au moins un champ est rempli compte aussi :
+  // l'utilisateur peut avoir cliqué ailleurs sans avoir terminé.
+  return [...document.querySelectorAll('form, .modal.open, .modal-bg.open')]
+    .some(f => f.offsetParent !== null
+      && [...f.querySelectorAll('input, textarea, select')].some(i => i.value && i.type !== 'hidden'));
+}
 function editTarget(tid){
   const t = (detData.targets || []).find(x => x.id === tid);
   if (!t) { toast('Cible introuvable', 'err'); return; }
@@ -863,7 +899,7 @@ async function deployTarget(tid,btn){
     toast('Commande de déploiement envoyée à '+(r.agent_id||'l\'agent')+' — l\'agent l\'exécutera à son prochain passage','ok');
     detData=await api('/'+detId); renderDetail();
     // rafraîchit le statut quelques fois (l'agent poll sur son timer)
-    let n=0; const iv=setInterval(async()=>{ n++; try{ detData=await api('/'+detId); renderDetail(); }catch{} if(n>=20) clearInterval(iv); }, 15000);
+    let n=0; const iv=setInterval(async()=>{ n++; if(saisieEnCours()) return; try{ detData=await api('/'+detId); renderDetail(); }catch{} if(n>=20) clearInterval(iv); }, 15000);
   }catch(e){ toast('Erreur : '+e.message,'err'); }
   finally{ btn.disabled=false; btn.textContent=o; }
 }
