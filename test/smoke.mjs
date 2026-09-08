@@ -15,7 +15,8 @@ const { vaultEncrypt, vaultDecrypt, vaultKeyIsExternal } = await import("../src/
 const { generateAccountKey, accountKeyToPem, accountKeyFromPem, generateCsr, ACME_DIRECTORIES } =
   await import("../src/lib/acme.js");
 const { expiryStatus, TLS_KINDS } = await import("../src/lib/certprobe.js");
-const { TARGET_TYPES, _certRecipients, _SEUILS_ALERTE } = await import("../src/routes/certificates.js");
+const { TARGET_TYPES, _certRecipients, _SEUILS_ALERTE, _ordreHa, _haDelayMin } =
+  await import("../src/routes/certificates.js");
 const { hashPassword, verifyPassword, passwordProblem } = await import("../src/auth.js");
 const { roleFromGroups } = await import("../src/lib/ldap.js");
 
@@ -189,6 +190,45 @@ await t("les paliers d'expiration relancent bien à chaque étape", () => {
   // chaque palier doit produire une clé distincte, sinon la relance est avalée
   const cles = new Set([30, 15, 14, 8, 7, 4, 3, 1, 0, -2].map(palier));
   assert.strictEqual(cles.size, 6, "paliers confondus : des relances seront perdues");
+});
+
+console.log("paire HA");
+await t("le backup est servi avant le master", () => {
+  const cible = (id, role, ordre) => ({ id, deploy_order: ordre, params: role ? { ha_role: role } : {} });
+  const ordre = _ordreHa([
+    cible(1, "master", 0), cible(2, null, 5), cible(3, "backup", 9), cible(4, "master", 0),
+  ]).map(x => x.id);
+  assert.strictEqual(ordre[0], 3, "le backup n'est pas servi en premier");
+  assert.strictEqual(ordre[1], 2, "le n\u0153ud isol\u00e9 devrait passer avant les masters");
+  assert.deepStrictEqual(ordre.slice(2).sort(), [1, 4], "les masters ne sont pas en dernier");
+  // l'ordre manuel reste respect\u00e9 \u00e0 l'int\u00e9rieur d'un m\u00eame groupe
+  const memeGroupe = _ordreHa([cible(7, "backup", 2), cible(8, "backup", 1)]).map(x => x.id);
+  assert.deepStrictEqual(memeGroupe, [8, 7], "deploy_order ignor\u00e9 dans le groupe");
+  // sans r\u00f4le d\u00e9clar\u00e9, rien ne doit changer
+  const sansRole = _ordreHa([cible(1, null, 1), cible(2, null, 0)]).map(x => x.id);
+  assert.deepStrictEqual(sansRole, [2, 1]);
+});
+await t("d\u00e9lai avant le master : valeurs par d\u00e9faut et aberrantes", () => {
+  const c = v => ({ params: v === undefined ? {} : { ha_delay_min: v } });
+  assert.strictEqual(_haDelayMin(c()), 10, "d\u00e9faut attendu \u00e0 10 min");
+  assert.strictEqual(_haDelayMin(c("30")), 30);
+  assert.strictEqual(_haDelayMin(c(0)), 0, "un d\u00e9lai nul doit rester nul");
+  assert.strictEqual(_haDelayMin(c("abc")), 10, "valeur illisible : repli sur 10");
+  assert.strictEqual(_haDelayMin(c(-5)), 10, "valeur n\u00e9gative : repli sur 10");
+  assert.strictEqual(_haDelayMin(c(99999)), 1440, "d\u00e9lai born\u00e9 \u00e0 24 h");
+  assert.strictEqual(_haDelayMin(undefined), 10);
+});
+await t("les deux types HA exposent le r\u00f4le et le d\u00e9lai", () => {
+  for (const type of ["haproxy", "aloha"]) {
+    const d = TARGET_TYPES.find(x => x.type === type);
+    const cles = (d.fields || []).map(f => f.key);
+    assert.ok(cles.includes("ha_role"), type + " : champ ha_role absent");
+    assert.ok(cles.includes("ha_delay_min"), type + " : champ ha_delay_min absent");
+    const role = d.fields.find(f => f.key === "ha_role");
+    assert.strictEqual(role.type, "select");
+    const valeurs = role.options.map(o => o[0]);
+    assert.deepStrictEqual(valeurs, ["", "backup", "master"]);
+  }
 });
 
 console.log("\n" + n + " tests passés");

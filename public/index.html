@@ -780,7 +780,7 @@ function renderDetail(){
 
     <h3 style="margin:16px 0 8px">⚙️ Cibles de déploiement (${tgts.length})</h3>
     <div style="overflow-x:auto"><table><thead><tr><th>Type</th><th>Nom</th><th>Ordre</th><th>Actif</th><th></th></tr></thead><tbody>
-      ${tgts.length?tgts.map(t=>`<tr><td><b>${esc((TYPES.find(x=>x.type===t.type)||{}).label||t.type)}</b><div class="muted mono">${esc(t.type)}</div></td><td>${esc(t.name||'—')}${t.agent_id?`<div class="muted mono">🖥 ${esc(agentName(t.agent_id))}</div>`:''}</td><td>${t.deploy_order||0}</td><td>${t.enabled?'✅':'⏸'}</td><td><div class="actions"><button class="iconbtn" title="Modifier les paramètres de cette cible" onclick="editTarget(${t.id})">✏️</button><button class="iconbtn" title="Déployer le certificat sur cette cible" onclick="deployTarget(${t.id},this)">🚀</button><button class="iconbtn" title="Supprimer" onclick="delTarget(${t.id})">🗑️</button></div></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty">Aucune cible. Ajoute-en une ci-dessous.</div></td></tr>'}
+      ${tgts.length?tgts.map(t=>`<tr><td><b>${esc((TYPES.find(x=>x.type===t.type)||{}).label||t.type)}</b><div class="muted mono">${esc(t.type)}</div>${t.params&&t.params.ha_role?`<div><span class="badge ${t.params.ha_role==='master'?'b-warn':'b-ok'}" title="${t.params.ha_role==='master'?'Nœud actif — déployé après le backup':'Nœud passif — déployé en premier'}">${t.params.ha_role==='master'?'master':'backup'}</span></div>`:''}</td><td>${esc(t.name||'—')}${t.agent_id?`<div class="muted mono">🖥 ${esc(agentName(t.agent_id))}</div>`:''}</td><td>${t.deploy_order||0}</td><td>${t.enabled?'✅':'⏸'}</td><td><div class="actions"><button class="iconbtn" title="Modifier les paramètres de cette cible" onclick="editTarget(${t.id})">✏️</button><button class="iconbtn" title="Déployer le certificat sur cette cible" onclick="deployTarget(${t.id},this)">🚀</button><button class="iconbtn" title="Supprimer" onclick="delTarget(${t.id})">🗑️</button></div></td></tr>`).join(''):'<tr><td colspan="5"><div class="empty">Aucune cible. Ajoute-en une ci-dessous.</div></td></tr>'}
     </tbody></table></div>
     <div class="card" style="background:var(--cm-bg);margin-top:12px">
       <h3>➕ Ajouter une cible</h3>
@@ -821,6 +821,10 @@ function renderTargetFields(){
     if(f.type==='agent'){
       const opts=AGENTS.map(a=>`<option value="${esc(a.agent_id)}">${esc(a.hostname||a.agent_id)}${a.ip?' — '+esc(a.ip):''}${a.os?' ('+esc(a.os)+')':''}</option>`).join('');
       return `<div><label>${esc(f.label)}${f.required?' *':''}</label><select id="${id}"><option value="">— choisir un agent enrôlé —</option>${opts}</select>${AGENTS.length?'':'<div class="muted" style="font-size:10.5px">Aucun agent enrôlé. Enrôle l\'agent certfleet sur le serveur cible.</div>'}</div>`;
+    }
+    if(f.type==='select'){
+      const opts=(f.options||[]).map(o=>`<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
+      return `<div><label>${esc(f.label)}${f.required?' *':''}</label><select id="${id}">${opts}</select></div>`;
     }
     if(f.type==='password')return `<div><label>${esc(f.label)}${f.required?' *':''}</label><input id="${id}" type="password" autocomplete="new-password" placeholder="${esc(f.placeholder||'')}"></div>`;
     return `<div><label>${esc(f.label)}${f.required?' *':''}</label><input id="${id}" placeholder="${esc(f.placeholder||'')}" value="${esc(f.default||'')}"></div>`;

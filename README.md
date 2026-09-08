@@ -40,6 +40,12 @@ par le service.
 **Renouvellement automatique** — déclenché à un pourcentage de la durée de vie restante,
 puis redéploiement sur toutes les cibles actives.
 
+**Paire haute disponibilité** — pour HAProxy et ALOHA, chaque cible se declare
+« backup » ou « master ». Le nœud passif reçoit le certificat en premier, l'actif
+après un délai (10 minutes par défaut) — et **pas du tout si le backup a échoué** :
+inutile de casser le nœud encore sain par-dessus celui qui vient de tomber.
+L'échéance est persistée en base, elle survit à un redémarrage du service.
+
 **Alertes par courriel** — chaque cible porte sa propre adresse : « qui prévenir si CE
 déploiement casse ». Sont notifiés l'échec d'un renouvellement, l'échec d'un
 redéploiement, l'approche d'une échéance (J-30, 14, 7, 3, 1, puis expiration) et les
