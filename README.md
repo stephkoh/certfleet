@@ -40,6 +40,12 @@ par le service.
 **Renouvellement automatique** — déclenché à un pourcentage de la durée de vie restante,
 puis redéploiement sur toutes les cibles actives.
 
+**Alertes par courriel** — chaque cible porte sa propre adresse : « qui prévenir si CE
+déploiement casse ». Sont notifiés l'échec d'un renouvellement, l'échec d'un
+redéploiement, l'approche d'une échéance (J-30, 14, 7, 3, 1, puis expiration) et les
+anomalies repérées par la sonde. Une automatisation qui échoue à 3 h du matin sans
+réveiller personne ne protège de rien.
+
 ---
 
 ## Ce qu'il ne fait pas
@@ -215,9 +221,17 @@ le journal d'audit, consultable dans **Comptes → Journal d'audit**.
 | `SESSION_HOURS` | durée de validité d'une session (défaut 12) |
 | `TRUST_PROXY` | `true` derrière un reverse proxy, pour journaliser l'adresse réelle du client |
 | `LDAP_*` | valeurs par défaut de l'annuaire ; préférez l'interface, qui chiffre le mot de passe |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` | serveur d'envoi des alertes ; à défaut, la clé `smtp` de la table `settings` |
+| `SMTP_USER` / `SMTP_PASS` | authentification SMTP, si le serveur l'exige |
+| `SMTP_FROM` | adresse expéditrice des alertes |
 
 Sans `CERT_VAULT_KEY`, une clé est générée et **stockée en base** — ce qui revient à
 laisser la clé sur la serrure. Le démarrage vous en avertit.
+
+Sans `SMTP_HOST`, aucune alerte ne part : elles sont seulement inscrites dans le
+journal du service (`[certAlert] SMTP non configuré`). L'adresse de chaque cible se
+saisit dans l'interface, avec un bouton **Tester l'adresse** — une adresse dont on
+ignore si elle fonctionne ne protège de rien.
 
 ---
 

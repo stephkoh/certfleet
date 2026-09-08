@@ -372,6 +372,14 @@ export async function ensureCertSchema() {
     ADD COLUMN IF NOT EXISTS issued_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS last_issue_error TEXT`);
   await query(`ALTER TABLE cert_deployments ADD COLUMN IF NOT EXISTS adm_command_id BIGINT`);
+  // Destinataires d'alerte : chaque cible porte la sienne (« qui prévenir si CE
+  // déploiement casse »), avec repli sur le certificat. Les clés *_alert_key
+  // évitent de renvoyer le même avertissement à chaque passage du cron.
+  await query(`ALTER TABLE cert_targets ADD COLUMN IF NOT EXISTS notify_email TEXT`);
+  await query(`ALTER TABLE cert_certificates ADD COLUMN IF NOT EXISTS notify_email TEXT`);
+  await query(`ALTER TABLE cert_certificates ADD COLUMN IF NOT EXISTS expiry_alert_key TEXT`);
+  await query(`ALTER TABLE cert_endpoints ADD COLUMN IF NOT EXISTS notify_email TEXT`);
+  await query(`ALTER TABLE cert_endpoints ADD COLUMN IF NOT EXISTS alert_key TEXT`);
   _schemaReady = true;
 }
 
@@ -651,11 +659,11 @@ router.post("/:id/targets", async (req, res) => {
     const cid = _int(req.params.id); const b = req.body || {};
     if (!b.type) return res.status(400).json({ error: "type requis" });
     const params = await _encTargetParams(b.params);
-    const r = await query(`INSERT INTO cert_targets(certificate_id, name, type, agent_id, params, deploy_order, post_hook, verify, enabled)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    const r = await query(`INSERT INTO cert_targets(certificate_id, name, type, agent_id, params, deploy_order, post_hook, verify, enabled, notify_email)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [cid, _str(b.name), _str(b.type), _str(b.agent_id),
        JSON.stringify(params), _int(b.deploy_order) || 0, _str(b.post_hook),
-       JSON.stringify(b.verify || {}), b.enabled !== false]);
+       JSON.stringify(b.verify || {}), b.enabled !== false, _str(b.notify_email)]);
     res.status(201).json({ ok: true, id: r.rows[0].id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -668,12 +676,31 @@ router.put("/targets/:tid", async (req, res) => {
     const previous = (await query("SELECT params FROM cert_targets WHERE id=$1", [tid])).rows[0]?.params || {};
     const params = await _encTargetParams(b.params, previous);
     await query(`UPDATE cert_targets SET name=$2, type=COALESCE($3,type), agent_id=$4,
-      params=$5, deploy_order=$6, post_hook=$7, verify=$8, enabled=$9 WHERE id=$1`,
+      params=$5, deploy_order=$6, post_hook=$7, verify=$8, enabled=$9, notify_email=$10 WHERE id=$1`,
       [tid, _str(b.name), _str(b.type), _str(b.agent_id), JSON.stringify(params),
-       _int(b.deploy_order) || 0, _str(b.post_hook), JSON.stringify(b.verify || {}), b.enabled !== false]);
+       _int(b.deploy_order) || 0, _str(b.post_hook), JSON.stringify(b.verify || {}), b.enabled !== false,
+       _str(b.notify_email)]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// Une adresse dont on ignore si elle fonctionne ne protège de rien : on doit
+// pouvoir la vérifier tout de suite, sans attendre une vraie panne.
+router.post("/alerts/test", async (req, res) => {
+  try {
+    const dest = _certRecipients(req.body?.email);
+    if (!dest.length) return res.status(400).json({ error: "Adresse invalide" });
+    const r = await _certAlert({
+      to: dest, level: "ok",
+      subject: "[certfleet] Test d'alerte certificat",
+      intro: "Ceci est un message de test : l'adresse est correctement configurée.",
+      rows: [["Destinataire(s)", dest.join(", ")], ["Émis le", new Date().toLocaleString("fr-FR")]],
+      hint: "Vous recevrez sur cette adresse les échecs de déploiement, les approches d'échéance et les anomalies TLS."
+    });
+    if (!r.sent) return res.status(500).json({ error: r.reason === "smtp" ? "SMTP non configuré (voir SMTP_HOST)" : r.reason });
+    res.json({ ok: true, to: r.to });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.delete("/targets/:tid", async (req, res) => {
   try { await query("DELETE FROM cert_targets WHERE id=$1", [_int(req.params.tid)]); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
@@ -1200,13 +1227,156 @@ function safeIntervalMs(minutes, label) {
   return ms;
 }
 
+// ═════════════════════════════════════════════
+// ALERTES — un renouvellement qui échoue à 3 h du matin ne sert à rien s'il ne
+// réveille personne. Tout était déjà détecté (journal du cron, table des
+// déploiements, sonde TLS) mais uniquement pour qui regardait l'écran.
+// ═════════════════════════════════════════════
+
+// La configuration vient d'abord de l'environnement — c'est ce qui se prête le
+// mieux à un déploiement conteneurisé — puis, à défaut, de la table settings.
+async function _certTransporter() {
+  let smtp = {};
+  if (process.env.SMTP_HOST) {
+    smtp = {
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || "25", 10),
+      secure: process.env.SMTP_SECURE === "true",
+      user: process.env.SMTP_USER, pass: process.env.SMTP_PASS,
+      from: process.env.SMTP_FROM
+    };
+  } else {
+    const r = await query("SELECT value FROM settings WHERE key='smtp'").catch(() => ({ rows: [] }));
+    smtp = r.rows?.[0]?.value || {};
+  }
+  if (!smtp.host || smtp.enabled === false) return null;
+  const nodemailer = (await import("nodemailer")).default;
+  const opts = { host: smtp.host, port: smtp.port || 25, secure: !!smtp.secure, tls: { rejectUnauthorized: false } };
+  if (smtp.user && (smtp.pass || smtp.password)) opts.auth = { user: smtp.user, pass: smtp.pass || smtp.password };
+  return { transporter: nodemailer.createTransport(opts), from: smtp.from || smtp.user || "certfleet@localhost" };
+}
+const _cEsc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Accepte « a@b.fr, c@d.fr » ou des adresses séparées par des points-virgules.
+// Une adresse invalide est écartée sans faire échouer l'envoi aux autres.
+export function _certRecipients(sources) {
+  const out = new Set();
+  for (const s of [].concat(sources)) {
+    for (const part of String(s || "").split(/[,;\s]+/)) {
+      const a = part.trim();
+      if (a && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a)) out.add(a);
+    }
+  }
+  return [...out];
+}
+
+async function _certAlert({ to, subject, level = "error", intro, rows = [], hint }) {
+  const dest = _certRecipients(to);
+  if (!dest.length) return { sent: false, reason: "aucun destinataire" };
+  const mailer = await _certTransporter().catch(() => null);
+  if (!mailer) { console.warn("[certAlert] SMTP non configuré, alerte perdue :", subject); return { sent: false, reason: "smtp" }; }
+  const coul = level === "ok" ? "#15803d" : level === "warn" ? "#b45309" : "#b91c1c";
+  const html = `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1d3557;">`
+    + `<p style="color:${coul};font-weight:700;font-size:15px;margin:0 0 10px;">${_cEsc(intro)}</p>`
+    + (rows.length ? `<table style="border-collapse:collapse;font-size:13px;margin:10px 0;">`
+        + rows.map(([k, v]) => `<tr><td style="padding:5px 14px 5px 0;color:#64748b;white-space:nowrap;">${_cEsc(k)}</td>`
+            + `<td style="padding:5px 0;"><b>${_cEsc(v)}</b></td></tr>`).join("") + `</table>` : "")
+    + (hint ? `<p style="background:#f8fafc;border-left:3px solid ${coul};padding:8px 12px;font-size:13px;">${_cEsc(hint)}</p>` : "")
+    + `<p style="color:#94a3b8;font-size:12px;">— certfleet</p></div>`;
+  try {
+    await mailer.transporter.sendMail({ from: mailer.from, to: dest.join(","), subject, html });
+    console.log(`[certAlert] ${subject} → ${dest.join(", ")}`);
+    return { sent: true, to: dest };
+  } catch (e) { console.warn("[certAlert] envoi impossible :", e.message); return { sent: false, reason: e.message }; }
+}
+
+// Destinataires d'un certificat : son adresse propre + celles de ses cibles actives.
+async function _certAllRecipients(certId, certMail) {
+  const rs = (await query("SELECT notify_email FROM cert_targets WHERE certificate_id=$1 AND enabled=true", [certId])).rows;
+  return [certMail, ...rs.map(x => x.notify_email)];
+}
+
+// Filet de sécurité INDÉPENDANT du renouvellement : si un certificat approche de
+// sa fin quelle qu'en soit la raison — auto-renouvellement désactivé, cron
+// arrêté, échecs répétés — quelqu'un doit l'apprendre avant les utilisateurs.
+//
+// Ordre CROISSANT obligatoire : .find() retient le premier seuil satisfait,
+// donc le plus petit palier encore valable. Classé en décroissant, tout
+// tomberait dans « 30 j » et plus aucune relance ne partirait ensuite.
+export const _SEUILS_ALERTE = [1, 3, 7, 14, 30];
+async function _certExpiryWatch() {
+  const certs = (await query(`SELECT id, common_name, not_after, notify_email, expiry_alert_key, auto_renew
+    FROM cert_certificates WHERE not_after IS NOT NULL AND not_after > now() - interval '30 days'`)).rows;
+  for (const c of certs) {
+    const jours = Math.floor((new Date(c.not_after).getTime() - Date.now()) / 86400000);
+    const seuil = jours < 0 ? "expire" : _SEUILS_ALERTE.find(s => jours <= s);
+    if (seuil === undefined) {
+      if (c.expiry_alert_key) await query("UPDATE cert_certificates SET expiry_alert_key=NULL WHERE id=$1", [c.id]);
+      continue;                                        // encore loin : rien à signaler
+    }
+    const cle = `${seuil}:${String(c.not_after).slice(0, 10)}`;
+    if (c.expiry_alert_key === cle) continue;          // palier déjà signalé
+    const r = await _certAlert({
+      to: await _certAllRecipients(c.id, c.notify_email),
+      level: jours <= 3 ? "error" : "warn",
+      subject: jours < 0 ? `[certfleet] Certificat EXPIRÉ — ${c.common_name}`
+                         : `[certfleet] Certificat à expiration dans ${jours} j — ${c.common_name}`,
+      intro: jours < 0 ? "Ce certificat est expiré et n'a pas été renouvelé."
+                       : `Ce certificat expire dans ${jours} jour(s) et n'a pas encore été renouvelé.`,
+      rows: [["Certificat", c.common_name], ["Expire le", String(c.not_after).slice(0, 10)],
+             ["Renouvellement automatique", c.auto_renew ? "activé" : "DÉSACTIVÉ"]],
+      hint: c.auto_renew ? "Le renouvellement automatique est actif : si rien ne se passe, consultez les journaux du service."
+                         : "Le renouvellement automatique est désactivé : ce certificat doit être renouvelé à la main."
+    });
+    if (r.sent) await query("UPDATE cert_certificates SET expiry_alert_key=$2 WHERE id=$1", [c.id, cle]);
+  }
+}
+
+// La sonde voit déjà qu'un service sert autre chose que le certificat déployé :
+// c'est exactement le cas « écrit sur la cible mais jamais rechargé ».
+const _STATUTS_ALERTE = {
+  unreachable: "Service injoignable : impossible de vérifier le certificat servi.",
+  mismatch: "Le certificat servi n'est pas celui qui a été déployé.",
+  flapping: "Des certificats différents sont servis selon les requêtes (réplicas incohérents).",
+  expired: "Le certificat servi est expiré."
+};
+async function _certEndpointAlert(ep, r) {
+  if (!_STATUTS_ALERTE[r.status]) {
+    if (ep.alert_key) await query("UPDATE cert_endpoints SET alert_key=NULL WHERE id=$1", [ep.id]);
+    return;                                            // retour à la normale
+  }
+  const cle = `${r.status}:${String(r.fingerprint_sha256 || "").slice(0, 16)}`;
+  if (ep.alert_key === cle) return;                    // déjà signalé, on ne harcèle pas
+  const cert = ep.certificate_id
+    ? (await query("SELECT common_name, notify_email FROM cert_certificates WHERE id=$1", [ep.certificate_id])).rows[0]
+    : null;
+  const tos = ep.certificate_id ? await _certAllRecipients(ep.certificate_id, cert?.notify_email) : [];
+  const a = await _certAlert({
+    to: [ep.notify_email, ...tos],
+    level: r.status === "expired" ? "error" : "warn",
+    subject: `[certfleet] Anomalie TLS — ${ep.label || ep.host}`,
+    intro: _STATUTS_ALERTE[r.status],
+    rows: [["Endpoint", `${ep.host}:${ep.port || 443}`],
+           ["Certificat attendu", cert?.common_name || "—"],
+           ["Statut", r.status],
+           ["Échéance servie", r.not_after ? String(r.not_after).slice(0, 10) : "—"]],
+    hint: r.status === "mismatch"
+      ? "Le déploiement a bien écrit le certificat, mais le service ne l'a pas rechargé."
+      : "Vérifiez le service, puis relancez le déploiement si nécessaire."
+  });
+  if (a.sent) await query("UPDATE cert_endpoints SET alert_key=$2 WHERE id=$1", [ep.id, cle]);
+}
+
 export function startCertMonitorCron(intervalMin = 360) {
   const run = async () => {
     try {
       await ensureCertSchema();
       const eps = (await query(`SELECT e.*, c.fingerprint_sha256 AS expected_fpr FROM cert_endpoints e
         LEFT JOIN cert_certificates c ON c.id=e.certificate_id WHERE e.enabled=true`)).rows;
-      for (const ep of eps) { await _applyProbe(ep).catch(() => {}); }
+      for (const ep of eps) {
+        const pr = await _applyProbe(ep).catch(() => null);
+        if (pr) await _certEndpointAlert(ep, pr).catch(e => console.warn("[certMonitor] alerte:", e.message));
+      }
       if (eps.length) console.log(`[certMonitor] ${eps.length} endpoint(s) sondé(s)`);
     } catch (e) { console.warn("[certMonitor]", e.message); }
   };
@@ -1239,14 +1409,41 @@ export function startCertRenewCron(intervalMin = 720) {
             const fresh = (await query("SELECT * FROM cert_certificates WHERE id=$1", [cert.id])).rows[0];
             const tgts = (await query("SELECT * FROM cert_targets WHERE certificate_id=$1 AND enabled=true ORDER BY deploy_order, id", [cert.id])).rows;
             let ok = 0;
-            for (const t of tgts) { try { await _deployToTarget(fresh, t, "auto-renew"); ok++; } catch (e) { console.warn(`[certRenew] deploy cible ${t.id} (${t.type}):`, e.message); } }
+            for (const t of tgts) {
+              try {
+                await _deployToTarget(fresh, t, "auto-renew"); ok++;
+                await _certAlert({ to: [t.notify_email, cert.notify_email], level: "ok",
+                  subject: `[certfleet] Certificat renouvelé et déployé — ${cert.common_name}`,
+                  intro: "Le certificat a été renouvelé automatiquement et redéployé sur cette cible.",
+                  rows: [["Certificat", cert.common_name], ["Cible", `${t.name || "#" + t.id} (${t.type})`],
+                         ["Nouvelle échéance", String(fresh.not_after).slice(0, 10)]],
+                  hint: "Aucune action de votre part n'est nécessaire." });
+              } catch (e) {
+                console.warn(`[certRenew] deploy cible ${t.id} (${t.type}):`, e.message);
+                await _certAlert({ to: [t.notify_email, cert.notify_email],
+                  subject: `[certfleet] ÉCHEC de déploiement — ${cert.common_name} → ${t.name || t.type}`,
+                  intro: "Le certificat a bien été renouvelé, mais son déploiement sur cette cible a échoué.",
+                  rows: [["Certificat", cert.common_name], ["Cible", `${t.name || "#" + t.id} (${t.type})`],
+                         ["Erreur", e.message],
+                         ["Échéance du certificat en place", String(cert.not_after).slice(0, 10)]],
+                  hint: "La cible sert toujours l'ancien certificat : relancez le déploiement avant cette échéance." });
+              }
+            }
             console.log(`[certRenew] ${cert.common_name} renouvelé → ${ok}/${tgts.length} cible(s) redéployée(s)`);
           } else {
             console.warn(`[certRenew] ${cert.common_name} : échec émission (${r.error})`);
+            await _certAlert({ to: await _certAllRecipients(cert.id, cert.notify_email),
+              subject: `[certfleet] ÉCHEC de renouvellement — ${cert.common_name}`,
+              intro: "Le renouvellement automatique de ce certificat a échoué.",
+              rows: [["Certificat", cert.common_name], ["Erreur", r.error || "inconnue"],
+                     ["Expire le", String(cert.not_after).slice(0, 10)],
+                     ["Jours restants", String(Math.round(remaining / 86400000))]],
+              hint: "Le cron réessaiera au prochain passage. Si l'échec persiste, corrigez la cause avant l'échéance." });
           }
         } catch (e) { console.warn("[certRenew]", cert.common_name, e.message); }
         finally { _issuing.delete(cert.id); }
       }
+      await _certExpiryWatch().catch(e => console.warn("[certRenew] veille expiration:", e.message));
     } catch (e) { console.warn("[certRenew]", e.message); }
   };
   setTimeout(run, 120000);                  // 1er passage 2 min après le boot

@@ -15,7 +15,7 @@ const { vaultEncrypt, vaultDecrypt, vaultKeyIsExternal } = await import("../src/
 const { generateAccountKey, accountKeyToPem, accountKeyFromPem, generateCsr, ACME_DIRECTORIES } =
   await import("../src/lib/acme.js");
 const { expiryStatus, TLS_KINDS } = await import("../src/lib/certprobe.js");
-const { TARGET_TYPES } = await import("../src/routes/certificates.js");
+const { TARGET_TYPES, _certRecipients, _SEUILS_ALERTE } = await import("../src/routes/certificates.js");
 const { hashPassword, verifyPassword, passwordProblem } = await import("../src/auth.js");
 const { roleFromGroups } = await import("../src/lib/ldap.js");
 
@@ -158,6 +158,37 @@ await t("le helper appelé par l'agent est bien celui livré", () => {
   const called = [...a.matchAll(/\/usr\/local\/bin\/(certfleet-[a-z-]+)/g)].map(m => m[1]);
   assert.ok(called.includes("certfleet-cert-install"), "helper non appelé");
   assert.ok(fs.existsSync("agent/certfleet-cert-install"));
+});
+
+console.log("alertes");
+await t("analyse des adresses de destination", () => {
+  assert.deepStrictEqual(_certRecipients("a@b.fr"), ["a@b.fr"]);
+  assert.deepStrictEqual(_certRecipients("a@b.fr, c@d.fr"), ["a@b.fr", "c@d.fr"]);
+  assert.deepStrictEqual(_certRecipients("a@b.fr;c@d.fr"), ["a@b.fr", "c@d.fr"]);
+  assert.deepStrictEqual(_certRecipients(" a@b.fr  a@b.fr "), ["a@b.fr"], "doublon non éliminé");
+  assert.deepStrictEqual(_certRecipients(["x@y.fr", null, "z@w.io"]), ["x@y.fr", "z@w.io"]);
+  // une adresse invalide ne doit pas empêcher les autres de recevoir l'alerte
+  assert.deepStrictEqual(_certRecipients("bon@ok.fr, pasuneadresse"), ["bon@ok.fr"]);
+  assert.deepStrictEqual(_certRecipients(""), []);
+  assert.deepStrictEqual(_certRecipients(null), []);
+});
+await t("les paliers d'expiration relancent bien à chaque étape", () => {
+  const palier = j => (j < 0 ? "expire" : _SEUILS_ALERTE.find(x => j <= x));
+  // Le piège : classés en décroissant, .find() renvoie toujours le plus grand
+  // seuil, une seule alerte part à 30 j et plus rien ensuite jusqu'à l'expiration.
+  assert.strictEqual(palier(90), undefined, "alerte trop tôt");
+  assert.strictEqual(palier(31), undefined, "alerte trop tôt");
+  assert.strictEqual(palier(30), 30);
+  assert.strictEqual(palier(15), 30);
+  assert.strictEqual(palier(14), 14, "pas de relance à 14 j");
+  assert.strictEqual(palier(7), 7, "pas de relance à 7 j");
+  assert.strictEqual(palier(3), 3, "pas de relance à 3 j");
+  assert.strictEqual(palier(1), 1, "pas de relance à 1 j");
+  assert.strictEqual(palier(0), 1);
+  assert.strictEqual(palier(-2), "expire", "certificat expiré non signalé");
+  // chaque palier doit produire une clé distincte, sinon la relance est avalée
+  const cles = new Set([30, 15, 14, 8, 7, 4, 3, 1, 0, -2].map(palier));
+  assert.strictEqual(cles.size, 6, "paliers confondus : des relances seront perdues");
 });
 
 console.log("\n" + n + " tests passés");

@@ -19,6 +19,7 @@
   "dependencies": {
     "express": "^4.19.2",
     "ldapts": "^7.4.0",
+    "nodemailer": "^10.0.1",
     "pg": "^8.11.5"
   },
   "keywords": [

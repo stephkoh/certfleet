@@ -385,6 +385,18 @@ const BASE = '/api/certificates';
 let CERTS=[], ENDPOINTS=[], TYPES=[], OVERVIEW={}, AGENTS=[], DEPLOYS=[];
 
 function toast(m,t){const el=document.getElementById('toast');el.textContent=m;el.className='toast show '+(t||'');setTimeout(()=>el.classList.remove('show'),3400);}
+async function testerAlerte(){
+  const el=document.getElementById('tMail'), out=document.getElementById('tMailTest');
+  const email=(el.value||'').trim();
+  if(!email){ out.textContent='Renseignez une adresse.'; return; }
+  out.textContent='Envoi en cours\u2026';
+  try{
+    const r=await api('/alerts/test',{method:'POST',body:{email}});
+    out.innerHTML='<span style="color:#15803d">\u2713 Message envoy\u00e9 \u00e0 '+esc((r.to||[]).join(', '))+'</span>';
+  }catch(e){
+    out.innerHTML='<span style="color:#b91c1c">\u2717 '+esc(e.message||'\u00e9chec')+'</span>';
+  }
+}
 async function api(path,opts){opts=opts||{};opts.headers={...(opts.headers||{}),'Authorization':'Bearer '+CERTFLEET_AUTH.getToken()};if(opts.body&&typeof opts.body==='object'){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(opts.body);}const r=await fetch(API+BASE+path,opts);if(!r.ok){let m='HTTP '+r.status;try{const d=await r.json();if(d.error)m=d.error;}catch{}throw new Error(m);}return r.json();}
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmtDate=s=>s?new Date(s).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
@@ -777,6 +789,14 @@ function renderDetail(){
         <div><label>Nom</label><input id="tName" placeholder="ex : nginx front prod"></div>
         <div><label>Ordre</label><input id="tOrder" type="number" value="0"></div>
       </div>
+      <div style="margin-top:8px">
+        <label>Alerte e-mail <span class="muted">(échec de déploiement, expiration, anomalie TLS)</span></label>
+        <input id="tMail" placeholder="ex : exploitation@exemple.fr — plusieurs adresses séparées par une virgule">
+        <div style="margin-top:6px;display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-sm" type="button" onclick="testerAlerte()">✉ Tester l'adresse</button>
+          <span id="tMailTest" class="muted"></span>
+        </div>
+      </div>
       <div id="tFields"></div>
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
         <button class="btn btn-primary btn-sm" id="tSubmitBtn" onclick="addTarget()">Ajouter la cible</button>
@@ -844,6 +864,7 @@ function editTarget(tid){
   renderTargetFields();
   document.getElementById('tName').value = t.name || '';
   document.getElementById('tOrder').value = t.deploy_order || 0;
+  document.getElementById('tMail').value = t.notify_email || '';
   const p = t.params || {};
   const def = TYPES.find(x => x.type === t.type) || {};
   (def.fields || []).forEach(f => {
@@ -870,13 +891,14 @@ function cancelEditTarget(){
   if (hint) hint.textContent = '';
   document.getElementById('tName').value = '';
   document.getElementById('tOrder').value = 0;
+  document.getElementById('tMail').value = '';
   renderTargetFields();
 }
 async function addTarget(){
   const t=TYPES.find(x=>x.type===document.getElementById('tType').value);
   const params={};let agent_id=null;
   (t.fields||[]).forEach(f=>{const el=document.getElementById('tf_'+f.key);if(!el)return;const v=f.type==='bool'?el.checked:(f.type==='password'?el.value:el.value.trim());if(f.key==='agent_id')agent_id=v;else params[f.key]=v;});
-  const body={type:t.type,name:document.getElementById('tName').value.trim(),deploy_order:parseInt(document.getElementById('tOrder').value,10)||0,agent_id,params};
+  const body={type:t.type,name:document.getElementById('tName').value.trim(),deploy_order:parseInt(document.getElementById('tOrder').value,10)||0,notify_email:document.getElementById('tMail').value.trim(),agent_id,params};
   try{
     if(editingTargetId){
       // Un mot de passe laissé vide n'est pas transmis : le backend garde le password_enc existant.
