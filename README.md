@@ -41,8 +41,8 @@ par le service.
 puis redéploiement sur toutes les cibles actives.
 
 **Paire haute disponibilité** — pour HAProxy et ALOHA, chaque cible se declare
-« backup » ou « master ». Le nœud passif reçoit le certificat en premier, l'actif
-après un délai (10 minutes par défaut) — et **pas du tout si le backup a échoué** :
+« backup » ou « primaire ». Le nœud passif reçoit le certificat en premier, l'actif
+après un délai (120 secondes par défaut) — et **pas du tout si le backup a échoué** :
 inutile de casser le nœud encore sain par-dessus celui qui vient de tomber.
 L'échéance est persistée en base, elle survit à un redémarrage du service.
 

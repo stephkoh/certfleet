@@ -80,18 +80,18 @@ export const TARGET_TYPES = [
               { key: "pem_path", label: "Chemin PEM combiné", type: "text", required: true, placeholder: "/etc/haproxy/certs/site.pem" },
               { key: "reload_cmd", label: "Commande reload", type: "text", default: "systemctl reload haproxy" },
               { key: "ha_role", label: "Rôle dans la paire HA", type: "select",
-                options: [["", "— nœud isolé —"], ["backup", "Backup (déployé en premier)"], ["master", "Master (après le délai)"]] },
-              { key: "ha_delay_min", label: "Délai avant le master (minutes)", type: "text", default: "10" } ] },
+                options: [["", "— nœud isolé —"], ["backup", "Backup (déployé en premier)"], ["primary", "Primaire (après le délai)"]] },
+              { key: "ha_delay_sec", label: "Délai avant le primaire (secondes)", type: "text", default: "120" } ] },
   { type: "aloha",        label: "HAProxy ALOHA (appliance virtuelle)", mode: "api", icon: "🔀",
     note: "Seul connecteur API implémenté à ce jour, et éprouvé en production. Mise à jour à chaud, sans redémarrage de l'appliance.",
-    fields: [ { key: "base_url", label: "URL Data Plane API", type: "text", required: true, placeholder: "http://lb-01.example.com:5555" },
+    fields: [ { key: "base_url", label: "URL Data Plane API", type: "text", required: true, placeholder: "https://lb-01.example.com:5555" },
               { key: "cert_name", label: "Nom du fichier certificat (storage ALOHA)", type: "text", required: true, placeholder: "exampleservicescom.pem" },
               { key: "username", label: "Utilisateur API (Basic Auth)", type: "text", required: true, placeholder: "admin" },
               { key: "password", label: "Mot de passe API", type: "password", required: true },
               { key: "insecure", label: "Ignorer la vérif TLS (API en HTTPS auto-signé)", type: "bool" },
               { key: "ha_role", label: "Rôle dans la paire HA", type: "select",
-                options: [["", "— nœud isolé —"], ["backup", "Backup (déployé en premier)"], ["master", "Master (après le délai)"]] },
-              { key: "ha_delay_min", label: "Délai avant le master (minutes)", type: "text", default: "10" } ] },
+                options: [["", "— nœud isolé —"], ["backup", "Backup (déployé en premier)"], ["primary", "Primaire (après le délai)"]] },
+              { key: "ha_delay_sec", label: "Délai avant le primaire (secondes)", type: "text", default: "120" } ] },
   { type: "caddy",        label: "Caddy", mode: "agent", os: "both", icon: "🧱",
     fields: [ { key: "agent_id", label: "Agent", type: "agent", required: true },
               { key: "cert_path", label: "Chemin cert", type: "text", required: true },
@@ -1392,15 +1392,15 @@ async function _certEndpointAlert(ep, r) {
 //      nœud encore sain par-dessus celui qui vient de tomber.
 // ═════════════════════════════════════════════
 const _haRole = t => String(t?.params?.ha_role || "").toLowerCase();
-export function _haDelayMin(t) {
-  const v = parseInt(t?.params?.ha_delay_min, 10);
-  return Number.isFinite(v) && v >= 0 ? Math.min(v, 1440) : 10;
+export function _haDelaySec(t) {
+  const v = parseInt(t?.params?.ha_delay_sec, 10);
+  return Number.isFinite(v) && v >= 0 ? Math.min(v, 86400) : 120;
 }
 
 // backup d'abord, nœuds isolés ensuite, master en dernier — l'ordre manuel
 // (deploy_order) reste respecté à l'intérieur de chaque groupe.
 export function _ordreHa(tgts) {
-  const rang = t => (_haRole(t) === "backup" ? 0 : _haRole(t) === "master" ? 2 : 1);
+  const rang = t => (_haRole(t) === "backup" ? 0 : _haRole(t) === "primary" ? 2 : 1);
   return tgts.slice().sort((a, b) =>
     rang(a) - rang(b) || (a.deploy_order || 0) - (b.deploy_order || 0) || a.id - b.id);
 }
@@ -1408,8 +1408,8 @@ export function _ordreHa(tgts) {
 // Déploiement sur toutes les cibles, en respectant la séquence HA.
 async function _deployStaged(cert, tgts, actor) {
   const ordonnees = _ordreHa(tgts);
-  const masters = ordonnees.filter(t => _haRole(t) === "master");
-  const immediates = ordonnees.filter(t => _haRole(t) !== "master");
+  const primaires = ordonnees.filter(t => _haRole(t) === "primary");
+  const immediates = ordonnees.filter(t => _haRole(t) !== "primary");
   const results = [], differes = [];
 
   let backupsKo = 0, backupsOk = 0;
@@ -1426,39 +1426,41 @@ async function _deployStaged(cert, tgts, actor) {
         rows: [["Certificat", cert.common_name], ["Cible", `${t.name || "#" + t.id} (${t.type})`],
                ["Rôle HA", _haRole(t) || "—"], ["Erreur", e.message]],
         hint: _haRole(t) === "backup"
-          ? "Le master ne sera PAS déployé tant que le backup n'aura pas abouti : le nœud actif reste intact."
+          ? "Le primaire ne sera PAS déployé tant que le backup n'aura pas abouti : le nœud actif reste intact."
           : "Relancez le déploiement après correction." });
     }
   }
 
-  for (const t of masters) {
+  for (const t of primaires) {
     if (backupsKo > 0) {                       // garde-fou principal
       results.push({ target_id: t.id, skipped: "backup en échec" });
       await _certAlert({ to: [t.notify_email, cert.notify_email],
-        subject: `[certfleet] Déploiement du master SUSPENDU — ${cert.common_name}`,
-        intro: "Le déploiement sur le nœud master a été volontairement suspendu.",
-        rows: [["Certificat", cert.common_name], ["Master", `${t.name || "#" + t.id} (${t.type})`],
+        subject: `[certfleet] Déploiement du primaire SUSPENDU — ${cert.common_name}`,
+        intro: "Le déploiement sur le nœud primaire a été volontairement suspendu.",
+        rows: [["Certificat", cert.common_name], ["Primaire", `${t.name || "#" + t.id} (${t.type})`],
                ["Motif", `${backupsKo} nœud(s) backup en échec`]],
         hint: "Le nœud actif conserve son certificat en cours. Corrigez le backup, puis relancez le déploiement." });
       continue;
     }
-    const delai = _haDelayMin(t);
+    const delai = _haDelaySec(t);
     if (!backupsOk || delai === 0) {           // pas de backup dans la paire : rien à attendre
       try { results.push({ target_id: t.id, ...(await _deployToTarget(cert, t, actor)) }); }
       catch (e) { results.push({ target_id: t.id, error: e.message }); }
       continue;
     }
-    const due = new Date(Date.now() + delai * 60000);
+    const due = new Date(Date.now() + delai * 1000);
     await query(`INSERT INTO cert_deploy_queue(certificate_id, target_id, due_at, reason)
       VALUES ($1,$2,$3,$4)`, [cert.id, t.id, due, actor]);
-    differes.push({ target_id: t.id, due_at: due, delay_min: delai });
-    results.push({ target_id: t.id, scheduled_at: due, delay_min: delai });
+    differes.push({ target_id: t.id, due_at: due, delay_sec: delai });
+    results.push({ target_id: t.id, scheduled_at: due, delay_sec: delai });
   }
   return { results, differes };
 }
 
-// Cron court : sert les masters dont le délai est écoulé.
-export function startCertDeployQueueCron(intervalMin = 2) {
+// Cron court : sert les primaires dont le délai est écoulé. La cadence doit
+// rester nettement inférieure au délai configuré (120 s par défaut), sinon
+// l'attente réelle serait le délai PLUS l'intervalle du cron.
+export function startCertDeployQueueCron(intervalSec = 30) {
   const run = async () => {
     try {
       await ensureCertSchema();
@@ -1473,32 +1475,32 @@ export function startCertDeployQueueCron(intervalMin = 2) {
           continue;
         }
         try {
-          await _deployToTarget(cert, t, (q.reason || "auto") + " (master HA)");
+          await _deployToTarget(cert, t, (q.reason || "auto") + " (primaire HA)");
           await query("UPDATE cert_deploy_queue SET status='done', done_at=now() WHERE id=$1", [q.id]);
-          console.log(`[certQueue] master déployé : ${cert.common_name} → ${t.name || t.id}`);
+          console.log(`[certQueue] primaire déployé : ${cert.common_name} → ${t.name || t.id}`);
           await _certAlert({ to: [t.notify_email, cert.notify_email], level: "ok",
-            subject: `[certfleet] Master HA déployé — ${cert.common_name}`,
-            intro: "Le nœud master a reçu le certificat après le délai de sécurité.",
-            rows: [["Certificat", cert.common_name], ["Master", `${t.name || "#" + t.id} (${t.type})`],
+            subject: `[certfleet] Primaire HA déployé — ${cert.common_name}`,
+            intro: "Le nœud primaire a reçu le certificat après le délai de sécurité.",
+            rows: [["Certificat", cert.common_name], ["Primaire", `${t.name || "#" + t.id} (${t.type})`],
                    ["Échéance", String(cert.not_after).slice(0, 10)]],
             hint: "La paire est désormais à jour sur les deux nœuds." });
         } catch (e) {
           await query("UPDATE cert_deploy_queue SET status='error', done_at=now(), error=$2 WHERE id=$1",
             [q.id, e.message]);
-          console.warn(`[certQueue] échec master ${q.target_id}:`, e.message);
+          console.warn(`[certQueue] échec primaire ${q.target_id}:`, e.message);
           await _certAlert({ to: [t.notify_email, cert.notify_email],
-            subject: `[certfleet] ÉCHEC sur le master HA — ${cert.common_name}`,
-            intro: "Le backup a bien été mis à jour, mais le déploiement sur le master a échoué.",
-            rows: [["Certificat", cert.common_name], ["Master", `${t.name || "#" + t.id} (${t.type})`],
+            subject: `[certfleet] ÉCHEC sur le primaire HA — ${cert.common_name}`,
+            intro: "Le backup a bien été mis à jour, mais le déploiement sur le primaire a échoué.",
+            rows: [["Certificat", cert.common_name], ["Primaire", `${t.name || "#" + t.id} (${t.type})`],
                    ["Erreur", e.message]],
             hint: "La paire est désynchronisée : backup à jour, master sur l'ancien certificat." });
         }
       }
     } catch (e) { console.warn("[certQueue]", e.message); }
   };
-  setTimeout(run, 90000);
-  setInterval(run, intervalMin * 60000);
-  console.log(`[certQueue] cron actif (toutes les ${intervalMin} min)`);
+  setTimeout(run, 60000);
+  setInterval(run, intervalSec * 1000);
+  console.log(`[certQueue] cron actif (toutes les ${intervalSec} s)`);
 }
 
 export function startCertMonitorCron(intervalMin = 360) {

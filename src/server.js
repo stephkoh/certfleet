@@ -93,7 +93,7 @@ async function main() {
   const renewMin = Number(process.env.RENEW_INTERVAL_MIN || 720);
   try { startCertMonitorCron(monitorMin); } catch (e) { console.warn("[cron] sonde :", e.message); }
   try { startCertRenewCron(renewMin); } catch (e) { console.warn("[cron] renouvellement :", e.message); }
-  try { startCertDeployQueueCron(2); } catch (e) { console.warn("[cron] file de deploiement :", e.message); }
+  try { startCertDeployQueueCron(30); } catch (e) { console.warn("[cron] file de deploiement :", e.message); }
 
   // Purge des sessions expirées, au démarrage puis toutes les heures.
   purgeExpiredSessions().catch(() => {});
